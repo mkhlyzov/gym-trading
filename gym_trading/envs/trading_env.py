@@ -104,8 +104,8 @@ class TradingEnv(gym.Env):
                 shares = (self._total_profit * (1 - self.comission_fee)) / last_trade_price
                 self._total_profit = (shares * (1 - self.comission_fee)) * current_price
             elif self._position == Positions.Short:
-                shares = (self._total_profit * (1 - self.comission_fee)) / last_trade_price
-                self._total_profit = (shares * (1 - self.comission_fee)) * current_price
+                shares = (self._total_profit * (1 - self.comission_fee)) / current_price
+                self._total_profit = (shares * (1 - self.comission_fee)) * last_trade_price
 
     def step(self, action) -> (np.array, float, bool, dict):
         # obs, reward, termination, truncation, info ?
