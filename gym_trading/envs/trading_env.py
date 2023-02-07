@@ -1,14 +1,10 @@
-import sys
-import os
-
-import random
-import datetime
+from enum import Enum
+from typing import Tuple
 
 import gym
-from gym.utils import seeding
-from enum import Enum
 import numpy as np
 import pandas as pd
+from gym.utils import seeding
 
 
 class Positions(Enum):
@@ -107,7 +103,7 @@ class TradingEnv(gym.Env):
                 shares = (self._total_profit * (1 - self.comission_fee)) / current_price
                 self._total_profit = (shares * (1 - self.comission_fee)) * last_trade_price
 
-    def step(self, action) -> (np.array, float, bool, dict):
+    def step(self, action) -> Tuple[np.array, float, bool, dict]:
         # obs, reward, termination, truncation, info ?
         action = Positions(action)
         self._done = (self._current_tick + 1) >= self._end_tick
