@@ -7,13 +7,13 @@ import pandas as pd
 from gym.utils import seeding
 
 
-class Positions(Enum):
+class Position(Enum):
     Short = 0
     Flat = 1
     Long = 2
 
     def opposite(self):
-        return Positions.Short if self == Positions.Long else Positions.Long
+        return Position.Short if self == Position.Long else Position.Long
 
 
 class TradingEnv(gym.Env):
@@ -36,7 +36,7 @@ class TradingEnv(gym.Env):
         self.reset()
 
         # spaces
-        self.action_space = gym.spaces.Discrete(len(Positions))
+        self.action_space = gym.spaces.Discrete(len(Position))
         self.observation_space = gym.spaces.Box(
             low=-np.inf,
             high=np.inf,
@@ -68,7 +68,7 @@ class TradingEnv(gym.Env):
 
     def _get_observation(self):
         price_change = 0
-        if self._position != Positions.Flat:
+        if self._position != Position.Flat:
             price_change = (self.prices[self._current_tick] - self.prices[self._last_trade_tick]) / self.prices[self._last_trade_tick]
         position = self._position.value / 3.
         features = self.signal_features[self._current_tick]
@@ -89,26 +89,26 @@ class TradingEnv(gym.Env):
 
     def _update_profit(self, action):
         trade_close = False
-        if self._position != Positions.Flat and action != self._position:
+        if self._position != Position.Flat and action != self._position:
             trade_close = True
 
         if trade_close:
             current_price = self.prices[self._current_tick]
             last_trade_price = self.prices[self._last_trade_tick]
 
-            if self._position == Positions.Long:
+            if self._position == Position.Long:
                 shares = (self._total_profit * (1 - self.comission_fee)) / last_trade_price
                 self._total_profit = (shares * (1 - self.comission_fee)) * current_price
-            elif self._position == Positions.Short:
+            elif self._position == Position.Short:
                 shares = (self._total_profit * (1 - self.comission_fee)) / current_price
                 self._total_profit = (shares * (1 - self.comission_fee)) * last_trade_price
 
     def step(self, action) -> Tuple[np.array, float, bool, dict]:
         # obs, reward, termination, truncation, info ?
-        action = Positions(action)
+        action = Position(action)
         self._done = (self._current_tick + 1) >= self._end_tick
         if self._done:
-            action = Positions.Flat
+            action = Position.Flat
         self._position_history.append(action)
 
         self._update_profit(action)
@@ -137,7 +137,7 @@ class TradingEnv(gym.Env):
         self._done = False
         self._current_tick = self._start_tick
         self._last_trade_tick = None
-        self._position = Positions.Flat
+        self._position = Position.Flat
         self._position_history = []
         self._total_reward = 0
         self._total_profit = 1
@@ -162,11 +162,11 @@ class TradingEnv(gym.Env):
         plt.plot(ticks, prices, 'b.', alpha=0.3)
 
         for tick, position in zip(ticks, self._position_history):
-            if position == Positions.Short:
+            if position == Position.Short:
                 plt.plot([tick], [prices[tick]], 'ro', alpha=0.9)
-            elif position == Positions.Flat:
+            elif position == Position.Flat:
                 plt.plot([tick], [prices[tick]], 'bo', alpha=0.3)
-            elif position == Positions.Long:
+            elif position == Position.Long:
                 plt.plot([tick], [prices[tick]], 'go', alpha=0.9)
 
         info = 'total profit: {:.3f}; idx_start: {};'.format(
