@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gym_trading"
+version = "0.0.1"
+authors = [
+  { name = "Michael Khlyzov", email = "s-man911@ukr.net" },
+]
+description = "Gym environment for Reinforcement Learning"
+readme = "README.md"
+requires-python = ">=3.7"
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+dependencies = [
+  "gym>=0.25",
+  "numpy",
+  "pandas",
+  "matplotlib",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/mkhlyzov/gym-trading"
