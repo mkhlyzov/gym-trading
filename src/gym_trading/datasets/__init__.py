@@ -1,10 +1,8 @@
-import pandas as pd
+from .datasets import (fetch_asset, load_asset_from_disc,
+                       load_asset_from_internet)
 
 try:
-    BITCOIN_USD_1H = pd.read_csv(
-        'https://www.cryptodatadownload.com/cdd/Bitstamp_BTCUSD_1h.csv',
-        header=1
-    )
-    BITCOIN_USD_1H.sort_values(by=['date'], inplace=True, ignore_index=True)
-except Exception:
-    BITCOIN_USD_1H = pd.DataFrame()
+    BITCOIN_USD_1H = load_asset_from_disc("BITCOIN_USD_1H")
+except FileNotFoundError:
+    fetch_asset("BITCOIN_USD_1H")
+    BITCOIN_USD_1H = load_asset_from_disc("BITCOIN_USD_1H")
