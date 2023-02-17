@@ -15,7 +15,7 @@ def load_asset_from_disc(asset_name: str) -> pandas.DataFrame:
     :type asset_name: str
     :return: A dataframe
     """
-    asset_path = pathlib.Path(__file__).resolve().parent / "".join([asset_name, ".csv"])
+    asset_path = pathlib.Path(__file__).resolve().parent / 'data' / "".join([asset_name, ".csv"])
     asset_df = pandas.read_csv(asset_path)
     return asset_df
 
@@ -42,5 +42,5 @@ def fetch_asset(asset_name: str) -> None:
     :type asset_name: str
     """
     asset_df = load_asset_from_internet(asset_name=asset_name)
-    to_path = pathlib.Path(__file__).resolve().parent / "".join([asset_name, ".csv"])
+    to_path = pathlib.Path(__file__).resolve().parent / 'data' / "".join([asset_name, ".csv"])
     asset_df.to_csv(to_path, index=False)
