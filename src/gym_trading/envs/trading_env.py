@@ -1,10 +1,9 @@
 from enum import Enum
-from typing import Callable, Tuple
+from typing import Any, Callable, Dict, Tuple
 
 import gymnasium as gym
 import numpy as np
 import pandas as pd
-from gymnasium.utils import seeding
 
 
 class Position(Enum):
@@ -32,6 +31,7 @@ class TradingEnv(gym.Env):
         self.comission_fee = comission_fee
         self.window_size = window_size
         self.episode_length = episode_length
+        self.max_episode_steps = episode_length
         self.prices, self.signal_features = self._process_data()
 
         self.reset()
@@ -76,7 +76,7 @@ class TradingEnv(gym.Env):
         features = self.signal_features[self._current_tick]
         return np.concatenate([features.flatten(), [price_change, position]])
 
-    def _calculate_reward(self, action):
+    def _calculate_reward(self, action) -> float:
         new_price = self.prices[self._current_tick]
         old_price = self.prices[self._current_tick - 1]
         new_pos = action.value
@@ -86,7 +86,7 @@ class TradingEnv(gym.Env):
         reward -= self.comission_fee * abs(new_pos - old_pos)
         return reward
 
-    def _update_profit(self, action):
+    def _update_profit(self, action) -> None:
         trade_close = False
         if self._position != Position.Flat and action != self._position:
             trade_close = True
@@ -126,7 +126,7 @@ class TradingEnv(gym.Env):
 
         return (self._get_observation(), reward, self._done, {})
 
-    def reset(self, *args, **kwargs):
+    def reset(self, *args, **kwargs) -> Tuple[Any, Dict]:
         super().reset(**kwargs)
 
         self._start_tick = self.np_random.integers(
@@ -144,10 +144,10 @@ class TradingEnv(gym.Env):
 
         return self._get_observation(), {}
 
-    def close(self):
+    def close(self) -> None:
         pass
 
-    def render(self):
+    def render(self) -> None:
         from matplotlib import pyplot as plt
 
         plt.style.use("seaborn")
