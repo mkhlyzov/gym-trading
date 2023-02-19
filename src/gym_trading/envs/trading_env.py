@@ -106,7 +106,7 @@ class TradingEnv(gym.Env):
                     shares * (1 - self.comission_fee)
                 ) * last_trade_price
 
-    def step(self, action) -> Tuple[np.array, float, bool, dict]:
+    def step(self, action) -> Tuple[np.array, float, bool, bool, dict]:
         # obs, reward, termination, truncation, info ?
         action = Position(action)
         self._done = (self._current_tick + 1) >= self._end_tick
@@ -124,7 +124,7 @@ class TradingEnv(gym.Env):
 
         self._position = action
 
-        return (self._get_observation(), reward, self._done, {})
+        return (self._get_observation(), reward, self._done, False, {})
 
     def reset(self, *args, **kwargs) -> Tuple[Any, Dict]:
         super().reset(**kwargs)
