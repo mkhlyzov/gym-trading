@@ -6,7 +6,7 @@ import pytest
 from gymnasium.utils.env_checker import check_env
 
 import gym_trading
-from gym_trading.envs import TradingEnv
+from gym_trading.envs import Position, TradingEnv
 
 
 @pytest.fixture()
@@ -76,6 +76,66 @@ class TestGymCompatability:
 
 class TestInnerLogic:
     """Colloction of tests to verify that Trading env emulates trades correctly"""
+
+    def test_reset_refreshes_variables(self) -> None:
+        env = TradingEnv(df=gym_trading.datasets.BITCOIN_USD_1H)
+        env.reset()
+        for _ in range(100):
+            env.step(env.action_space.sample())
+        env.reset()
+
+        assert env._position == Position.Flat
+        assert numpy.isclose(env._total_profit, 1.0)
+        assert numpy.isclose(env._total_reward, 0.0)
+
+    def test_buying_changes_position_to_long(self) -> None:
+        env = TradingEnv(df=gym_trading.datasets.BITCOIN_USD_1H)
+        env.reset()
+        env.step(Position.Long)
+        assert env._position == Position.Long
+
+    def test_position_is_correct_after_many_steps(self) -> None:
+        env = TradingEnv(df=gym_trading.datasets.BITCOIN_USD_1H)
+        env.reset()
+        env.step(Position.Short)
+        env.step(Position.Flat)
+        env.step(Position.Long)
+        env.step(Position.Short)
+        assert env._position == Position.Short
+
+    def test_reward_for_operation_is_negative_fee(self, constant_price) -> None:
+        env = TradingEnv(df=constant_price)
+        env.reset()
+        _1, reward, *_2 = env.step(Position.Long)
+        assert numpy.isclose(reward, -env._comission_fee)
+        _1, reward, *_2 = env.step(Position.Short)
+        assert numpy.isclose(reward, 2 * -env._comission_fee)
+
+    def test_profit_for_neutral_trade_is_based_on_fee(self, constant_price) -> None:
+        env = TradingEnv(df=constant_price)
+        env.reset()
+        for _ in range(100):
+            env.step(Position.Long)
+        env.step(Position.Flat)
+
+        expected_profit = (1 - env._comission_fee) / (1 + env._comission_fee)
+        assert numpy.isclose(env._total_profit, expected_profit)
+
+    def test_profit_for_buy_and_hold(self, linear_price) -> None:
+        env = TradingEnv(df=linear_price)
+        env.reset()
+        old_price = env.prices[env._current_tick]
+        for _ in range(100):
+            env.step(Position.Long)
+        new_price = env.prices[env._current_tick]  # assumes that buy/sell is instant
+        env.step(Position.Flat)
+
+        expected_profit = (
+            (new_price / old_price)
+            * (1 - env._comission_fee)
+            / (1 + env._comission_fee)
+        )
+        assert numpy.isclose(env._total_profit, expected_profit)
 
     def test_env_creation_with_custom_preprocessor(self) -> None:
         """

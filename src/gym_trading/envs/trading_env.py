@@ -28,9 +28,9 @@ class TradingEnv(gymnasium.Env):
         preprocessor: Callable = None,
     ) -> None:
         self.df = df
-        self.comission_fee = comission_fee
-        self.window_size = window_size
         self.episode_length = episode_length
+        self.window_size = window_size
+        self._comission_fee = comission_fee
         self.max_episode_steps = episode_length
         self.prices, self.signal_features = self._process_data()
 
@@ -99,7 +99,7 @@ class TradingEnv(gymnasium.Env):
         old_pos = self._position.value
 
         reward = np.log(new_price / old_price) * (new_pos - 1)
-        reward -= self.comission_fee * abs(new_pos - old_pos)
+        reward -= self._comission_fee * abs(new_pos - old_pos)
         return reward
 
     def _update_profit(self, action) -> None:
@@ -113,13 +113,13 @@ class TradingEnv(gymnasium.Env):
 
             if self._position == Position.Long:
                 shares = (
-                    self._total_profit * (1 - self.comission_fee)
+                    self._total_profit * (1 - self._comission_fee)
                 ) / last_trade_price
-                self._total_profit = (shares * (1 - self.comission_fee)) * current_price
+                self._total_profit = (shares * (1 - self._comission_fee)) * current_price
             elif self._position == Position.Short:
-                shares = (self._total_profit * (1 - self.comission_fee)) / current_price
+                shares = (self._total_profit * (1 - self._comission_fee)) / current_price
                 self._total_profit = (
-                    shares * (1 - self.comission_fee)
+                    shares * (1 - self._comission_fee)
                 ) * last_trade_price
 
     def step(self, action) -> Tuple[np.array, float, bool, bool, dict]:
