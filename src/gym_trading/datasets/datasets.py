@@ -35,6 +35,7 @@ def load_asset_from_internet(asset_name: str) -> pandas.DataFrame:
     url = ENDPOINTS.get(asset_name, None)
     storage_options = {"User-Agent": "Mozilla/5.0"}
     asset_df = pandas.read_csv(url, header=1, storage_options=storage_options)
+    asset_df['date'] = pandas.to_datetime(asset_df['date'])
     asset_df.sort_values(by=["date"], inplace=True, ignore_index=True)
     return asset_df
 
