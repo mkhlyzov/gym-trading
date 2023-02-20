@@ -1,7 +1,7 @@
 from enum import Enum
 from typing import Any, Callable, Dict, Tuple
 
-import gymnasium as gym
+import gymnasium
 import numpy as np
 import pandas as pd
 
@@ -15,7 +15,7 @@ class Position(Enum):
         return Position.Short if self == Position.Long else Position.Long
 
 
-class TradingEnv(gym.Env):
+class TradingEnv(gymnasium.Env):
     metadata = {}
 
     def __init__(
@@ -37,12 +37,21 @@ class TradingEnv(gym.Env):
         self.reset()
 
         # spaces
-        self.action_space = gym.spaces.Discrete(len(Position))
-        self.observation_space = gym.spaces.Box(
-            low=-np.inf,
-            high=np.inf,
-            shape=self._get_observation().shape,
-            dtype=np.float64,
+        self.action_space = gymnasium.spaces.Discrete(len(Position))
+        self.observation_space = gymnasium.spaces.Dict(
+            {
+                "features": gymnasium.spaces.Box(
+                    -np.inf,
+                    np.inf,
+                    shape=self._get_observation()["features"].shape,
+                    dtype=float,
+                ),
+                "price_change": gymnasium.spaces.Box(
+                    -np.inf, np.inf, shape=(1,), dtype=float
+                ),
+                "position": gymnasium.spaces.Box(0, 1, shape=(1,), dtype=float),
+                "time_left": gymnasium.spaces.Box(0, 1, shape=(1,), dtype=float),
+            }
         )
 
     def _process_data(self):
@@ -66,15 +75,22 @@ class TradingEnv(gym.Env):
 
         return prices, signal_features
 
-    def _get_observation(self):
+    def _get_observation(self) -> Dict[str, Any]:
         price_change = 0
         if self._position != Position.Flat:
             price_change = (
                 self.prices[self._current_tick] - self.prices[self._last_trade_tick]
             ) / self.prices[self._last_trade_tick]
-        position = self._position.value / 3.0
+        position = self._position.value / 2.0
         features = self.signal_features[self._current_tick]
-        return np.concatenate([features.flatten(), [price_change, position]])
+        time_left = np.clip((self._end_tick - self._current_tick) / 100.0, 0, 1)
+
+        return {
+            "features": features,
+            "price_change": np.array([price_change]),
+            "position": np.array([position]),
+            "time_left": np.array([time_left]),
+        }
 
     def _calculate_reward(self, action) -> float:
         new_price = self.prices[self._current_tick]
