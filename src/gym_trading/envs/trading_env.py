@@ -87,9 +87,9 @@ class TradingEnv(gymnasium.Env):
 
         return {
             "features": features,
-            "price_change": np.array([price_change]),
-            "position": np.array([position]),
-            "time_left": np.array([time_left]),
+            "price_change": np.array([price_change], dtype=float),
+            "position": np.array([position], dtype=float),
+            "time_left": np.array([time_left], dtype=float),
         }
 
     def _calculate_reward(self, action) -> float:

@@ -1,4 +1,5 @@
 import datetime
+from pdb import line_prefix
 
 import numpy
 import pandas
@@ -110,6 +111,22 @@ class TestInnerLogic:
         assert numpy.isclose(reward, -env._comission_fee)
         _1, reward, *_2 = env.step(Position.Short)
         assert numpy.isclose(reward, 2 * -env._comission_fee)
+
+    def test_reward_correlates_with_price_change(self, linear_price) -> None:
+        env = TradingEnv(df=linear_price)
+        env.reset()
+
+        env.step(Position.Long)
+        _1, reward, *_2 = env.step(Position.Long)
+        assert reward > 0
+
+        env.step(Position.Short)
+        _1, reward, *_2 = env.step(Position.Short)
+        assert reward < 0
+
+        env.step(Position.Flat)
+        _1, reward, *_2 = env.step(Position.Flat)
+        assert reward == 0
 
     def test_profit_for_neutral_trade_is_based_on_fee(self, constant_price) -> None:
         env = TradingEnv(df=constant_price)
