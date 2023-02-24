@@ -28,8 +28,8 @@ class TradingEnv(gymnasium.Env):
         process_data: Callable = None,
     ) -> None:
         self.df = df
-        if 'date' in self.df.columns:
-            self.df = self.df.set_index('date')
+        if "date" in self.df.columns:
+            self.df = self.df.set_index("date")
 
         self.episode_length = episode_length
         self.window_size = window_size
@@ -39,6 +39,8 @@ class TradingEnv(gymnasium.Env):
         self.prices, self.signal_features = (
             process_data(self) if process_data else self._process_data()
         )
+        if self.prices.shape[0] != self.signal_features.shape[0]:
+            raise ValueError("signal_features and prices have different shapes")
 
         self.reset()
 
@@ -64,10 +66,18 @@ class TradingEnv(gymnasium.Env):
         prices = self.df.close
 
         mask = list(range(self.window_size))
-        signal_features = pd.concat([
-            (self.df.close.shift(mask[i]) - self.df.close.shift(mask[i + 1])) / self.df.close.shift(mask[i])
-            for i, _ in enumerate(mask[:-1])
-        ], axis=1).fillna(0).to_numpy()
+        signal_features = (
+            pd.concat(
+                [
+                    (self.df.close.shift(mask[i]) - self.df.close.shift(mask[i + 1]))
+                    / self.df.close.shift(mask[i])
+                    for i, _ in enumerate(mask[:-1])
+                ],
+                axis=1,
+            )
+            .fillna(0)
+            .to_numpy()
+        )
 
         return prices, signal_features
 
@@ -111,9 +121,13 @@ class TradingEnv(gymnasium.Env):
                 shares = (
                     self._total_profit * (1 - self._comission_fee)
                 ) / last_trade_price
-                self._total_profit = (shares * (1 - self._comission_fee)) * current_price
+                self._total_profit = (
+                    shares * (1 - self._comission_fee)
+                ) * current_price
             elif self._position == Position.Short:
-                shares = (self._total_profit * (1 - self._comission_fee)) / current_price
+                shares = (
+                    self._total_profit * (1 - self._comission_fee)
+                ) / current_price
                 self._total_profit = (
                     shares * (1 - self._comission_fee)
                 ) * last_trade_price

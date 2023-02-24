@@ -159,10 +159,19 @@ class TestInnerLogic:
         It creates a trading environment with a custom preprocessor
         """
 
-        def get_features(env) -> numpy.ndarray:
+        def get_features_1(env) -> numpy.ndarray:
             return numpy.zeros(1_000), numpy.zeros((1_000, 5))
+
+        def get_features_2(env) -> numpy.ndarray:
+            price = env.df.close
+            features = env.df.close.rolling(10, min_periods=1).mean().to_numpy()
+            return price, features
 
         TradingEnv(
             df=gym_trading.datasets.BITCOIN_USD_1H,
-            process_data=get_features,
+            process_data=get_features_1,
+        )
+        TradingEnv(
+            df=gym_trading.datasets.BITCOIN_USD_1H,
+            process_data=get_features_2,
         )
