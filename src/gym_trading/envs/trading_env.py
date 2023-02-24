@@ -118,19 +118,17 @@ class TradingEnv(gymnasium.Env):
             last_trade_price = self.prices[self._last_trade_tick]
 
             if self._position == Position.Long:
-                shares = (
-                    self._total_profit * (1 - self._comission_fee)
-                ) / last_trade_price
-                self._total_profit = (
-                    shares * (1 - self._comission_fee)
-                ) * current_price
+                # Closing Long position
+                last_trade_price *= (1 + self._comission_fee)
+                current_price *= (1 - self._comission_fee)
+                shares = self._total_profit / last_trade_price
+                self._total_profit = shares * current_price
             elif self._position == Position.Short:
-                shares = (
-                    self._total_profit * (1 - self._comission_fee)
-                ) / current_price
-                self._total_profit = (
-                    shares * (1 - self._comission_fee)
-                ) * last_trade_price
+                # Closing Short position
+                last_trade_price *= (1 - self._comission_fee)
+                current_price *= (1 + self._comission_fee)
+                shares = self._total_profit / current_price
+                self._total_profit = shares * last_trade_price
 
     def step(self, action) -> Tuple[np.array, float, bool, bool, dict]:
         # obs, reward, termination, truncation, info ?

@@ -129,7 +129,7 @@ class TestInnerLogic:
         assert reward == 0
 
     def test_profit_for_neutral_trade_is_based_on_fee(self, constant_price) -> None:
-        env = TradingEnv(df=constant_price, comission_fee=0.0007)
+        env = TradingEnv(df=constant_price, comission_fee=0.02)
         env.reset()
         for _ in range(100):
             env.step(Position.Long)
@@ -139,7 +139,7 @@ class TestInnerLogic:
         assert numpy.isclose(env._total_profit, expected_profit)
 
     def test_profit_for_buy_and_hold(self, linear_price) -> None:
-        env = TradingEnv(df=linear_price)
+        env = TradingEnv(df=linear_price, comission_fee=0.02)
         env.reset()
         old_price = env.prices[env._current_tick]
         for _ in range(100):
