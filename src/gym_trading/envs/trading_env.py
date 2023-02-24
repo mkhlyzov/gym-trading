@@ -25,14 +25,20 @@ class TradingEnv(gymnasium.Env):
         episode_length: int = 24 * 14,
         window_size: int = 20,
         comission_fee: float = 7e-4,
-        preprocessor: Callable = None,
+        process_data: Callable = None,
     ) -> None:
         self.df = df
+        if 'date' in self.df.columns:
+            self.df = self.df.set_index('date')
+
         self.episode_length = episode_length
         self.window_size = window_size
         self._comission_fee = comission_fee
         self.max_episode_steps = episode_length
-        self.prices, self.signal_features = self._process_data()
+
+        self.prices, self.signal_features = (
+            process_data(self) if process_data else self._process_data()
+        )
 
         self.reset()
 
@@ -55,23 +61,13 @@ class TradingEnv(gymnasium.Env):
         )
 
     def _process_data(self):
-        prices = self.df.loc[:, "close"].to_numpy()
+        prices = self.df.close
 
-        diff = np.insert(np.diff(prices), 0, 0)
-        relative_diff = diff / prices
-
-        def shift(xs, n):
-            if n == 0:
-                return xs
-            assert n > 0
-            e = np.empty_like(xs)
-            e[:n] = np.nan
-            e[n:] = xs[:-n]
-            return e
-
-        signal_features = np.stack(
-            [shift(relative_diff, i) for i in range(self.window_size)], axis=1
-        )
+        mask = list(range(self.window_size))
+        signal_features = pd.concat([
+            (self.df.close.shift(mask[i]) - self.df.close.shift(mask[i + 1])) / self.df.close.shift(mask[i])
+            for i, _ in enumerate(mask[:-1])
+        ], axis=1).fillna(0).to_numpy()
 
         return prices, signal_features
 

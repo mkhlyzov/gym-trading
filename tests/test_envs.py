@@ -129,7 +129,7 @@ class TestInnerLogic:
         assert reward == 0
 
     def test_profit_for_neutral_trade_is_based_on_fee(self, constant_price) -> None:
-        env = TradingEnv(df=constant_price)
+        env = TradingEnv(df=constant_price, comission_fee=0.0007)
         env.reset()
         for _ in range(100):
             env.step(Position.Long)
@@ -159,10 +159,10 @@ class TestInnerLogic:
         It creates a trading environment with a custom preprocessor
         """
 
-        def get_features(df: pandas.DataFrame, index: int) -> numpy.ndarray:
-            return numpy.zeros(19)
+        def get_features(env) -> numpy.ndarray:
+            return numpy.zeros(1_000), numpy.zeros((1_000, 5))
 
         TradingEnv(
             df=gym_trading.datasets.BITCOIN_USD_1H,
-            preprocessor=get_features,
+            process_data=get_features,
         )
