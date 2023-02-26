@@ -1,28 +1,51 @@
 from enum import Enum
-from typing import Any, Callable, Dict, Tuple
+from typing import Any, Callable, Dict, List, Tuple
 
 import gymnasium
 import numpy as np
 import pandas as pd
+from matplotlib import pyplot as plt
 
 
 class Position(Enum):
-    Short = 0
-    Flat = 1
-    Long = 2
+    """
+    The Position class is an enumeration of the possible positions
+    that a trader can take in the market
+    """
 
-    def opposite(self):
-        return Position.Short if self == Position.Long else Position.Long
+    SHORT = 0
+    FLAT = 1
+    LONG = 2
 
 
 class TradingEnv(gymnasium.Env):
+    """
+    It's a gymnasium environment that takes a dataframe of stock prices
+    and allows you to trade on it
+    """
+
     metadata = {}
+
+    action_space: gymnasium.spaces.Discrete
+    observation_space: gymnasium.spaces.Dict
+    reward_range: Tuple[float, float]
+
+    max_episode_steps: int
+
+    prices: pd.Series
+    features: np.ndarray
+
+    _total_profit: float
+    _position: float
+    _old_position: float
+    _position_history: List[Position]
+    _last_trade_tick: int
 
     def __init__(
         self,
         *,
         df: pd.DataFrame,
-        episode_length: int = 24 * 14,
+        max_episode_steps: int = 24 * 14,
         window_size: int = 20,
         comission_fee: float = 7e-4,
         process_data: Callable = None,
@@ -31,10 +54,10 @@ class TradingEnv(gymnasium.Env):
         if "date" in self.df.columns:
             self.df = self.df.set_index("date")
 
-        self.episode_length = episode_length
+        self.max_episode_steps = max_episode_steps
         self.window_size = window_size
         self._comission_fee = comission_fee
-        self.max_episode_steps = episode_length
+        self.max_episode_steps = max_episode_steps
 
         self.prices, self.signal_features = (
             process_data(self) if process_data else self._process_data()
@@ -62,7 +85,7 @@ class TradingEnv(gymnasium.Env):
             }
         )
 
-    def _process_data(self):
+    def _process_data(self) -> Tuple[pd.Series, np.ndarray]:
         prices = self.df.close
 
         mask = list(range(self.window_size))
@@ -83,11 +106,11 @@ class TradingEnv(gymnasium.Env):
 
     def _get_observation(self) -> Dict[str, Any]:
         price_change = 0
-        if self._position != Position.Flat:
+        if self._position != Position.FLAT:
             price_change = (
                 self.prices[self._current_tick] - self.prices[self._last_trade_tick]
             ) / self.prices[self._last_trade_tick]
-        position = self._position.value / 2.0
+        position = self._position.value - 1
         features = self.signal_features[self._current_tick]
         time_left = np.clip((self._end_tick - self._current_tick) / 100.0, 0, 1)
 
@@ -98,73 +121,66 @@ class TradingEnv(gymnasium.Env):
             "time_left": np.array([time_left], dtype=float),
         }
 
-    def _calculate_reward(self, action) -> float:
+    def _calculate_reward(self) -> float:
         new_price = self.prices[self._current_tick]
         old_price = self.prices[self._current_tick - 1]
-        new_pos = action.value
-        old_pos = self._position.value
+        new_pos = self._position.value
+        old_pos = self._old_position.value
 
         reward = np.log(new_price / old_price) * (new_pos - 1)
         reward -= self._comission_fee * abs(new_pos - old_pos)
         return reward
 
-    def _update_profit(self, action) -> None:
-        trade_close = False
-        if self._position != Position.Flat and action != self._position:
-            trade_close = True
+    def _update_profit_on_deal_close(self) -> None:
+        current_price = self.prices[self._current_tick]
+        last_trade_price = self.prices[self._last_trade_tick]
 
-        if trade_close:
-            current_price = self.prices[self._current_tick]
-            last_trade_price = self.prices[self._last_trade_tick]
-
-            if self._position == Position.Long:
-                # Closing Long position
-                last_trade_price *= (1 + self._comission_fee)
-                current_price *= (1 - self._comission_fee)
-                shares = self._total_profit / last_trade_price
-                self._total_profit = shares * current_price
-            elif self._position == Position.Short:
-                # Closing Short position
-                last_trade_price *= (1 - self._comission_fee)
-                current_price *= (1 + self._comission_fee)
-                shares = self._total_profit / current_price
-                self._total_profit = shares * last_trade_price
+        if self._old_position == Position.LONG:
+            # Closing LONG position
+            last_trade_price *= 1 + self._comission_fee
+            current_price *= 1 - self._comission_fee
+            shares = self._total_profit / last_trade_price
+            self._total_profit = shares * current_price
+        elif self._old_position == Position.SHORT:
+            # Closing SHORT position
+            last_trade_price *= 1 - self._comission_fee
+            current_price *= 1 + self._comission_fee
+            shares = self._total_profit / current_price
+            self._total_profit = shares * last_trade_price
 
     def step(self, action) -> Tuple[np.array, float, bool, bool, dict]:
-        # obs, reward, termination, truncation, info ?
-        action = Position(action)
-        self._done = (self._current_tick + 1) >= self._end_tick
-        if self._done:
-            action = Position.Flat
-        self._position_history.append(action)
+        # obs, reward, terminated, truncated, info
+        done = (self._current_tick + 1) >= self._end_tick
+        next_position = Position(action) if not done else Position.FLAT
+        self._position_history.append(next_position)
 
-        self._update_profit(action)
-        if self._position != action:
+        if self._position != next_position:
+            if self._position != Position.FLAT:
+                self._update_profit_on_deal_close()
             self._last_trade_tick = self._current_tick
 
         self._current_tick += 1
-        reward = self._calculate_reward(action)
+        self._old_position = self._position
+        self._position = next_position
+        reward = self._calculate_reward()
         self._total_reward += reward
 
-        self._position = action
+        return (self._get_observation(), reward, done, False, {})
 
-        return (self._get_observation(), reward, self._done, False, {})
-
-    def reset(self, *args, **kwargs) -> Tuple[Any, Dict]:
+    def reset(self, /, **kwargs) -> Tuple[Any, Dict]:
         super().reset(**kwargs)
 
         self._start_tick = self.np_random.integers(
-            self.window_size, len(self.prices) - self.episode_length
+            self.window_size, len(self.prices) - self.max_episode_steps
         )
-        self._end_tick = self._start_tick + self.episode_length
-        self._done = False
+        self._end_tick = self._start_tick + self.max_episode_steps
         self._current_tick = self._start_tick
         self._last_trade_tick = None
-        self._position = Position.Flat
+        self._position = Position.FLAT
+        self._old_position = None
         self._position_history = []
         self._total_reward = 0
         self._total_profit = 1
-        self.history = []
 
         return self._get_observation(), {}
 
@@ -172,8 +188,6 @@ class TradingEnv(gymnasium.Env):
         pass
 
     def render(self) -> None:
-        from matplotlib import pyplot as plt
-
         plt.style.use("seaborn")
         plt.figure(figsize=(25, 10), dpi=200)
 
@@ -185,16 +199,14 @@ class TradingEnv(gymnasium.Env):
         plt.plot(ticks, prices, "b.", alpha=0.3)
 
         for tick, position in zip(ticks, self._position_history):
-            if position == Position.Short:
+            if position == Position.SHORT:
                 plt.plot([tick], [prices[tick]], "ro", alpha=0.9)
-            elif position == Position.Flat:
+            elif position == Position.FLAT:
                 plt.plot([tick], [prices[tick]], "bo", alpha=0.3)
-            elif position == Position.Long:
+            elif position == Position.LONG:
                 plt.plot([tick], [prices[tick]], "go", alpha=0.9)
 
-        info = "total profit: {:.3f}; idx_start: {};".format(
-            self._total_profit, self._start_tick
-        )
+        info = f"total profit: {self._total_profit:.3f}; idx_start: {self._start_tick};"
         plt.title(info, fontsize=20)
         plt.xlabel("candle #")
         plt.ylabel("stock close price")

@@ -1,5 +1,4 @@
 import datetime
-from pdb import line_prefix
 
 import numpy
 import pandas
@@ -85,55 +84,55 @@ class TestInnerLogic:
             env.step(env.action_space.sample())
         env.reset()
 
-        assert env._position == Position.Flat
+        assert env._position == Position.FLAT
         assert numpy.isclose(env._total_profit, 1.0)
         assert numpy.isclose(env._total_reward, 0.0)
 
-    def test_buying_changes_position_to_long(self) -> None:
+    def test_buying_changes_position_to_LONG(self) -> None:
         env = TradingEnv(df=gym_trading.datasets.BITCOIN_USD_1H)
         env.reset()
-        env.step(Position.Long)
-        assert env._position == Position.Long
+        env.step(Position.LONG)
+        assert env._position == Position.LONG
 
     def test_position_is_correct_after_many_steps(self) -> None:
         env = TradingEnv(df=gym_trading.datasets.BITCOIN_USD_1H)
         env.reset()
-        env.step(Position.Short)
-        env.step(Position.Flat)
-        env.step(Position.Long)
-        env.step(Position.Short)
-        assert env._position == Position.Short
+        env.step(Position.SHORT)
+        env.step(Position.FLAT)
+        env.step(Position.LONG)
+        env.step(Position.SHORT)
+        assert env._position == Position.SHORT
 
     def test_reward_for_operation_is_negative_fee(self, constant_price) -> None:
         env = TradingEnv(df=constant_price)
         env.reset()
-        _1, reward, *_2 = env.step(Position.Long)
+        _, reward, *_ = env.step(Position.LONG)
         assert numpy.isclose(reward, -env._comission_fee)
-        _1, reward, *_2 = env.step(Position.Short)
+        _, reward, *_ = env.step(Position.SHORT)
         assert numpy.isclose(reward, 2 * -env._comission_fee)
 
     def test_reward_correlates_with_price_change(self, linear_price) -> None:
         env = TradingEnv(df=linear_price)
         env.reset()
 
-        env.step(Position.Long)
-        _1, reward, *_2 = env.step(Position.Long)
+        env.step(Position.LONG)
+        _, reward, *_ = env.step(Position.LONG)
         assert reward > 0
 
-        env.step(Position.Short)
-        _1, reward, *_2 = env.step(Position.Short)
+        env.step(Position.SHORT)
+        _, reward, *_ = env.step(Position.SHORT)
         assert reward < 0
 
-        env.step(Position.Flat)
-        _1, reward, *_2 = env.step(Position.Flat)
+        env.step(Position.FLAT)
+        _, reward, *_ = env.step(Position.FLAT)
         assert reward == 0
 
     def test_profit_for_neutral_trade_is_based_on_fee(self, constant_price) -> None:
         env = TradingEnv(df=constant_price, comission_fee=0.02)
         env.reset()
         for _ in range(100):
-            env.step(Position.Long)
-        env.step(Position.Flat)
+            env.step(Position.LONG)
+        env.step(Position.FLAT)
 
         expected_profit = (1 - env._comission_fee) / (1 + env._comission_fee)
         assert numpy.isclose(env._total_profit, expected_profit)
@@ -143,9 +142,9 @@ class TestInnerLogic:
         env.reset()
         old_price = env.prices[env._current_tick]
         for _ in range(100):
-            env.step(Position.Long)
+            env.step(Position.LONG)
         new_price = env.prices[env._current_tick]  # assumes that buy/sell is instant
-        env.step(Position.Flat)
+        env.step(Position.FLAT)
 
         expected_profit = (
             (new_price / old_price)
