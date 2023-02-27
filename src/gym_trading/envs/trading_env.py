@@ -167,8 +167,8 @@ class TradingEnv(gymnasium.Env):
 
         return (self._get_observation(), reward, done, False, {})
 
-    def reset(self, /, **kwargs) -> Tuple[Any, Dict]:
-        super().reset(**kwargs)
+    def reset(self, *args, **kwargs) -> Tuple[Any, Dict]:
+        super().reset(*args, **kwargs)
 
         self._start_tick = self.np_random.integers(
             self.window_size, len(self.prices) - self.max_episode_steps
@@ -186,6 +186,28 @@ class TradingEnv(gymnasium.Env):
 
     def close(self) -> None:
         pass
+
+    def _get_optimal_action(self) -> Position:
+        s = np.sign(
+            self.prices[self._current_tick + 1] - self.prices[self._current_tick]
+        )
+        if s == 0:
+            return self._position
+
+        threshold = (1 + self._comission_fee) / (1 - self._comission_fee)
+        p_ = self.prices[self._current_tick]
+        j = self._current_tick + 1
+        while j <= self._end_tick:
+            p_ = s * max(s * p_, s * self.prices[j])
+            delta_p = (p_ / self.prices[self._current_tick]) ** s
+            drawback = (p_ / self.prices[j]) ** s
+            if drawback > threshold or drawback > delta_p:
+                break
+            j += 1
+
+        if delta_p < threshold:
+            return self._position
+        return Position(1 + s)
 
     def render(self) -> None:
         plt.style.use("seaborn")
