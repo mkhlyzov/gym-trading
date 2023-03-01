@@ -135,13 +135,13 @@ class TradingEnv(gymnasium.Env):
         current_price = self.prices[self._current_tick]
         last_trade_price = self.prices[self._last_trade_tick]
 
-        if self._old_position == Position.LONG:
+        if self._position == Position.LONG:
             # Closing LONG position
             last_trade_price *= 1 + self._comission_fee
             current_price *= 1 - self._comission_fee
             shares = self._total_profit / last_trade_price
             self._total_profit = shares * current_price
-        elif self._old_position == Position.SHORT:
+        elif self._position == Position.SHORT:
             # Closing SHORT position
             last_trade_price *= 1 - self._comission_fee
             current_price *= 1 + self._comission_fee
@@ -167,12 +167,12 @@ class TradingEnv(gymnasium.Env):
 
         return (self._get_observation(), reward, done, False, {})
 
-    def reset(self, *args, **kwargs) -> Tuple[Any, Dict]:
-        super().reset(*args, **kwargs)
+    def reset(self, idx_start=None, **kwargs) -> Tuple[Any, Dict]:
+        super().reset(**kwargs)
 
         self._start_tick = self.np_random.integers(
             self.window_size, len(self.prices) - self.max_episode_steps
-        )
+        ) if idx_start is None else idx_start
         self._end_tick = self._start_tick + self.max_episode_steps
         self._current_tick = self._start_tick
         self._last_trade_tick = None
@@ -208,6 +208,36 @@ class TradingEnv(gymnasium.Env):
         if delta_p < threshold:
             return self._position
         return Position(1 + s)
+    
+    def _get_max_profit(self) -> float:
+        threshold = (1 + self._comission_fee) / (1 - self._comission_fee)
+        profit = 1.
+        i = self._start_tick
+
+        while i < self._end_tick:
+            s = np.sign(self.prices[i + 1] - self.prices[i])
+            if s == 0:
+                i += 1
+                continue
+            p_ = self.prices[i]
+            idx_extremum = i
+            j = i + 1
+            while j <= self._end_tick:
+                p_ = s * max(s * p_, s * self.prices[j])
+                if np.isclose(self.prices[j], p_):
+                    idx_extremum = j
+                delta_p = (p_ / self.prices[i]) ** s
+                drawback = (p_ / self.prices[j]) ** s
+                if drawback > threshold or drawback > delta_p:
+                    break
+                j += 1
+
+            if delta_p >= threshold:
+                profit *= (delta_p / threshold)
+
+            i = idx_extremum
+
+        return profit
 
     def render(self) -> None:
         plt.style.use("seaborn")
@@ -228,9 +258,23 @@ class TradingEnv(gymnasium.Env):
             elif position == Position.LONG:
                 plt.plot([tick], [prices[tick]], "go", alpha=0.9)
 
-        info = f"total profit: {self._total_profit:.3f}; idx_start: {self._start_tick};"
+        info = f"total profit: {self._total_profit:.3f};  idx_start: {self._start_tick};  max possible profit: {self._get_max_profit():.3f};"
         plt.title(info, fontsize=20)
         plt.xlabel("candle #")
         plt.ylabel("stock close price")
 
         plt.show()
+
+
+if __name__ == '__main__':
+    import gym_trading
+    env = TradingEnv(df=gym_trading.datasets.BITCOIN_USD_1H, comission_fee=0.001, max_episode_steps=350)
+    env.reset()
+    print(env._get_max_profit())
+    terminated = False
+    while not terminated:
+        _, _, terminated, _, _, = env.step(env._get_optimal_action())
+    print(env._total_profit)
+    print(env._start_tick)
+    env.render()
+        
