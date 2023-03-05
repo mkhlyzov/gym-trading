@@ -20,6 +20,7 @@ def load_asset_from_disc(asset_name: str) -> pandas.DataFrame:
     )
     asset_df = pandas.read_csv(asset_path)
     asset_df['date'] = pandas.to_datetime(asset_df['date'])
+    asset_df.set_index("date", inplace=True)
     return asset_df
 
 
@@ -37,6 +38,7 @@ def load_asset_from_internet(asset_name: str) -> pandas.DataFrame:
     asset_df = pandas.read_csv(url, header=1, storage_options=storage_options)
     asset_df['date'] = pandas.to_datetime(asset_df['date'])
     asset_df.sort_values(by=["date"], inplace=True, ignore_index=True)
+    asset_df.set_index("date", inplace=True)
     return asset_df
 
 
@@ -51,4 +53,4 @@ def fetch_asset(asset_name: str) -> None:
     to_path = (
         pathlib.Path(__file__).resolve().parent / "data" / "".join([asset_name, ".csv"])
     )
-    asset_df.to_csv(to_path, index=False)
+    asset_df.to_csv(to_path)
