@@ -36,8 +36,8 @@ class TradingEnv(gymnasium.Env):
     features: np.ndarray
 
     _total_profit: float
-    _position: float
-    _old_position: float
+    _position: Position
+    _old_position: Position
     _position_history: List[Position]
     _last_trade_tick: int
 
@@ -51,8 +51,6 @@ class TradingEnv(gymnasium.Env):
         process_data: Callable = None,
     ) -> None:
         self.df = df
-        if "date" in self.df.columns:
-            self.df = self.df.set_index("date")
 
         self.max_episode_steps = max_episode_steps
         self.window_size = window_size
@@ -187,7 +185,7 @@ class TradingEnv(gymnasium.Env):
     def close(self) -> None:
         pass
 
-    def _get_optimal_action(self) -> Position:
+    def get_optimal_action(self) -> Position:
         s = np.sign(
             self.prices[self._current_tick + 1] - self.prices[self._current_tick]
         )
@@ -209,7 +207,7 @@ class TradingEnv(gymnasium.Env):
             return self._position
         return Position(1 + s)
     
-    def _get_max_profit(self) -> float:
+    def get_max_profit(self) -> float:
         threshold = (1 + self._comission_fee) / (1 - self._comission_fee)
         profit = 1.
         i = self._start_tick
@@ -243,25 +241,22 @@ class TradingEnv(gymnasium.Env):
         plt.style.use("seaborn")
         plt.figure(figsize=(25, 10), dpi=200)
 
-        ticks = np.arange(self._start_tick, self._end_tick)
-        prices = self.prices[ticks]
-        ticks -= ticks.min()
+        index = self.prices.index[self._start_tick: self._end_tick]
+        df = pd.DataFrame(dict(
+            price=self.prices[index],
+            position=self._position_history,
+        ))
+    
+        plt.plot(df.price, "b", alpha=0.3)
+        plt.plot(df.price, "b.", alpha=0.3)
+        plt.plot(df.price[df.position == Position.SHORT], "ro", alpha=0.9)
+        plt.plot(df.price[df.position == Position.FLAT], "bo", alpha=0.3)
+        plt.plot(df.price[df.position == Position.LONG], "go", alpha=0.9)
 
-        plt.plot(ticks, prices, "b", alpha=0.3)
-        plt.plot(ticks, prices, "b.", alpha=0.3)
-
-        for tick, position in zip(ticks, self._position_history):
-            if position == Position.SHORT:
-                plt.plot([tick], [prices[tick]], "ro", alpha=0.9)
-            elif position == Position.FLAT:
-                plt.plot([tick], [prices[tick]], "bo", alpha=0.3)
-            elif position == Position.LONG:
-                plt.plot([tick], [prices[tick]], "go", alpha=0.9)
-
-        info = f"total profit: {self._total_profit:.3f};  idx_start: {self._start_tick};  max possible profit: {self._get_max_profit():.3f};"
+        info = f"total profit: {self._total_profit:.3f};  idx_start: {self._start_tick};  max possible profit: {self.get_max_profit():.3f};"
         plt.title(info, fontsize=20)
-        plt.xlabel("candle #")
-        plt.ylabel("stock close price")
+        plt.xlabel("datetime")
+        plt.ylabel("Price")
 
         plt.show()
 
@@ -270,11 +265,14 @@ if __name__ == '__main__':
     import gym_trading
     env = TradingEnv(df=gym_trading.datasets.BITCOIN_USD_1H, comission_fee=0.001, max_episode_steps=350)
     env.reset()
-    print(env._get_max_profit())
-    terminated = False
-    while not terminated:
-        _, _, terminated, _, _, = env.step(env._get_optimal_action())
+    print(env.get_max_profit())
+    done_ = False
+    while not done_:
+        # action_ = env.action_space.sample()
+        action_ = env.get_optimal_action()
+        _, _, done_, _, _, = env.step(action_)
     print(env._total_profit)
     print(env._start_tick)
+    print(env._total_reward)
     env.render()
         
