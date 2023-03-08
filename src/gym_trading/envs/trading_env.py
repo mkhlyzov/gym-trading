@@ -250,7 +250,7 @@ class TradingEnv(gymnasium.Env):
         plt.plot(df.price, "b", alpha=0.3)
         plt.plot(df.price, "b.", alpha=0.3)
         plt.plot(df.price[df.position == Position.SHORT], "ro", alpha=0.9)
-        plt.plot(df.price[df.position == Position.FLAT], "bo", alpha=0.3)
+        # plt.plot(df.price[df.position == Position.FLAT], "bo", alpha=0.3)
         plt.plot(df.price[df.position == Position.LONG], "go", alpha=0.9)
 
         info = f"total profit: {self._total_profit:.3f};  idx_start: {self._start_tick};  max possible profit: {self.get_max_profit():.3f};"
