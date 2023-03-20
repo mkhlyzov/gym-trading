@@ -122,13 +122,14 @@ class TradingEnv2(gymnasium.Env):
         }
     
     def calculate_reward(self) -> float:
-        new_price = self.prices[self.current_idx]
-        old_price = self.prices[self.current_idx - self.idx_step]
         new_pos = self.position.value
         old_pos = self.old_position.value
+        reward = -self.comission_fee * abs(new_pos - old_pos)
+        
+        new_price = self.prices[self.current_idx]
+        old_price = self.prices[self.current_idx - self.idx_step]
+        reward += np.log(new_price / old_price) * (new_pos - 1)
 
-        reward = np.log(new_price / old_price) * (new_pos - 1)
-        reward -= self.comission_fee * abs(new_pos - old_pos)
         return reward
     
     def update_profit_on_deal_close(self) -> None:
@@ -159,7 +160,8 @@ class TradingEnv2(gymnasium.Env):
                 self.update_profit_on_deal_close()
             self.last_trade_idx = self.current_idx
 
-        self.current_idx += self.idx_step
+        if not done:
+            self.current_idx += self.idx_step
         self.old_position = self.position
         self.position = next_position
         reward = self.calculate_reward()
@@ -172,7 +174,7 @@ class TradingEnv2(gymnasium.Env):
 
         idx1 = self.df.index[0] + pd.Timedelta(self.std_window)
         idx2 = self.df.index[-1] - pd.Timedelta("14D")  #=========================HARDCODED=VALUE===========
-        self.start_idx = self.df[idx1:idx2].sample().index[0] if start_idx is None else self.df.index[start_idx]
+        self.start_idx = self.df[idx1:idx2].sample().index[0] if start_idx is None else pd.Timestamp(start_idx)
 
         p = self.df.close[self.start_idx - pd.Timedelta(self.std_window):self.start_idx]
         if p.isna().mean() > 0.5:
@@ -217,6 +219,8 @@ class TradingEnv2(gymnasium.Env):
         pass
 
     def get_optimal_action(self) -> Position:
+        if self.current_idx + self.idx_step >= self.end_idx:
+            return self.position
         s = np.sign(
             self.prices[self.current_idx + self.idx_step] - self.prices[self.current_idx]
         )
@@ -243,7 +247,7 @@ class TradingEnv2(gymnasium.Env):
         profit = 1.
         i = self.start_idx
 
-        while i < self.end_idx:
+        while i + self.idx_step < self.end_idx:
             s = np.sign(self.prices[i + self.idx_step] - self.prices[i])
             if s == 0:
                 i += self.idx_step
@@ -272,7 +276,9 @@ class TradingEnv2(gymnasium.Env):
         plt.style.use("seaborn")
         plt.figure(figsize=(25, 10), dpi=200)
 
-        index = self.prices[self.start_idx:self.end_idx - self.idx_step].index
+        index = self.prices[self.start_idx:self.end_idx].index
+        if len(index) > len(self.position_history):
+            index = index[:-1]
         df = pd.DataFrame(dict(
             price=self.prices[index],
             position=self.position_history,
@@ -311,21 +317,21 @@ if __name__ == "__main__":
         return df.close, features
 
     # env = TradingEnv2(df["2014":], 500, process_data=process_data)
-    env = TradingEnv2(df["2014":], max_episode_steps=500, window_size=20)
-    # obs, _ = env.reset(100_000)
-    # done = False
-    # while not done:
-    #     action = env.action_space.sample()
-    #     # action = env.get_optimal_action()
-    #     obs, _, done, _, _ = env.step(action)
-    # print(env.total_profit, env.total_reward)
+    env = TradingEnv2(df["2014":], max_episode_steps="14D", window_size=20)
+    obs, _ = env.reset('2018-08-18 17:16:00')
+    done = False
+    while not done:
+        # action = env.action_space.sample()
+        action = env.get_optimal_action()
+        obs, _, done, _, _ = env.step(action)
+    print(env.total_profit, env.total_reward)
     # env.render()
 
-    volat = []
-    for i in range(1000):
-        env.reset()
-        features = env.signal_features.loc[env.start_idx:env.end_idx].values
-        std = features[features != 0].std()
-        if not np.isnan(std):
-            volat.append(std)
-    print(f"{np.mean(volat):.4f} ± {np.std(volat):.4f}")
+    # volat = []
+    # for i in range(1000):
+    #     env.reset()
+    #     features = env.signal_features.loc[env.start_idx:env.end_idx].values
+    #     std = features[features != 0].std()
+    #     if not np.isnan(std):
+    #         volat.append(std)
+    # print(f"{np.mean(volat):.4f} ± {np.std(volat):.4f}")
