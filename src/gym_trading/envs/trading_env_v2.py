@@ -41,7 +41,7 @@ class TradingEnv2(gymnasium.Env):
     prices: pd.Series
     signal_features: pd.DataFrame
 
-    std_window: str = "2D"     # Window for calculating volatility on episode start
+    std_window: str     # Window for calculating volatility on episode start
 
     start_idx: pd.Timestamp
     end_idx: pd.Timestamp
@@ -64,13 +64,15 @@ class TradingEnv2(gymnasium.Env):
         window_size: int = 20,
         comission_fee: float = 0.001,
         std_threshold: float = 0.0020,
+        std_window: str = "7D",
     ) -> None:
         self.df = df.resample(df.index[-1] - df.index[-2]).last()
         self.max_episode_steps = max_episode_steps
         self.std_threshold = std_threshold
+        self.std_window = std_window
         self.comission_fee = comission_fee
         self.process_data = process_data if process_data is not None \
-            else lambda x: self.default_preprocessor(x, window_size)
+            else lambda x: self.default_preprocessor(x, window_size, std_threshold)
         
         self.reset()    # In order to call get_observation() for spaces
         # spaces
@@ -92,7 +94,7 @@ class TradingEnv2(gymnasium.Env):
         )
 
     @staticmethod
-    def default_preprocessor(df: pd.DataFrame, window: int):
+    def default_preprocessor(df: pd.DataFrame, window: int, std: float):
         mask = range(window)
         price = df.close.fillna(method="ffill")
         features = pd.concat(
@@ -102,7 +104,7 @@ class TradingEnv2(gymnasium.Env):
                 for i in mask
             ], axis=1
         )
-        return price, features
+        return price, features / std
     
     def get_observation(self) -> Dict[str, Any]:
         price_change = 0
@@ -177,11 +179,12 @@ class TradingEnv2(gymnasium.Env):
         self.start_idx = self.df[idx1:idx2].sample().index[0] if start_idx is None else pd.Timestamp(start_idx)
 
         p = self.df.close[self.start_idx - pd.Timedelta(self.std_window):self.start_idx]
-        if p.isna().mean() > 0.5:
+        dp = (p.shift(1) - p)/  (p.shift(1) + p)
+        if dp.isna().mean() > 0.5:
             if start_idx is not None:
-                raise RuntimeError(f"Too many NaN values, can't determine optimal scale")
+                raise RuntimeError("Too many NaN values, can't determine optimal scale")
             return self.reset()
-        std = ((p.shift(1) - p)/  (p.shift(1) + p)).std()
+        std = dp.std()
         scale = int(max(np.rint((self.std_threshold / std)**2), 1)) # Number of candles to  combine
         step = self.df.index[-1] - self.df.index[-2]
 
