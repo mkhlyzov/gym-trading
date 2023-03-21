@@ -66,7 +66,7 @@ class TradingEnv2(gymnasium.Env):
         std_threshold: float = 0.0020,
         std_window: str = "7D",
     ) -> None:
-        self.df = df.resample(df.index[-1] - df.index[-2]).last()
+        self.df = df.resample((df.index[1:] - df.index[:-1]).min()).last()
         self.max_episode_steps = max_episode_steps
         self.std_threshold = std_threshold
         self.std_window = std_window
