@@ -103,7 +103,7 @@ class TradingEnv2(gymnasium.Env):
                 # df.close.shift(i) / df.close
                 for i in mask
             ], axis=1
-        )
+        ).fillna(0)
         return price, features / std
     
     def get_observation(self) -> Dict[str, Any]:
@@ -118,7 +118,7 @@ class TradingEnv2(gymnasium.Env):
 
         return {
             "features": features,
-            "price_change": np.array([price_change], dtype=float),
+            "price_change": np.array([price_change * 10], dtype=float), # multiply by 10 to normalize
             "position": np.array([position], dtype=float),
             "time_left": np.array([time_left], dtype=float),
         }
@@ -191,6 +191,9 @@ class TradingEnv2(gymnasium.Env):
         episode_duration = pd.Timedelta(self.max_episode_steps) if isinstance(self.max_episode_steps, str) \
             else self.max_episode_steps * scale * step
         self.end_idx = self.start_idx + episode_duration
+
+        self.end_idx = min(self.end_idx, self.df.index[-1]) # in case idx2 estimation was bad
+
         self.current_idx = self.start_idx
         self.idx_step = scale * step
 
