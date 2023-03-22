@@ -176,7 +176,9 @@ class TradingEnv2(gymnasium.Env):
 
         idx1 = self.df.index[0] + pd.Timedelta(self.std_window)
         idx2 = self.df.index[-1] - pd.Timedelta("14D")  #=========================HARDCODED=VALUE===========
-        self.start_idx = self.df[idx1:idx2].sample().index[0] if start_idx is None else pd.Timestamp(start_idx)
+
+        self.start_idx = pd.Timestamp(start_idx) if start_idx is not None else \
+            self.df[idx1:idx2].index[np.random.randint(len(self.df[idx1:idx2].index))]
 
         p = self.df.close[self.start_idx - pd.Timedelta(self.std_window):self.start_idx]
         dp = (p.shift(1) - p)/  (p.shift(1) + p)
@@ -204,12 +206,24 @@ class TradingEnv2(gymnasium.Env):
             low = "min",
             volume = "sum",
         )
-        for i in range(scale):
-            df = self.df[
-                self.start_idx - pd.Timedelta(self.std_window):self.end_idx
-            ].resample(step * scale, offset=i*step).aggregate(resampling_func)
-            if self.start_idx in df.index:
-                break
+        resampling_func = {c: resampling_func[c] for c in self.df.columns}
+
+        df = self.df[
+            self.start_idx - pd.Timedelta(self.std_window):self.end_idx + step * scale * 2
+        ].resample(step * scale, offset=0).aggregate(resampling_func)
+        offset = (df[self.start_idx:].index - self.start_idx)[0]
+        df = self.df[
+            self.start_idx - pd.Timedelta(self.std_window):self.end_idx + step * scale * 2
+        ].resample(step * scale, offset=-offset).aggregate(resampling_func)
+
+        # (df.index[df.index > self.start_idx] - self.start_idx)[0]
+
+        # for i in range(scale):
+        #     df = self.df[
+        #         self.start_idx - pd.Timedelta(self.std_window):self.end_idx + step * scale * 2
+        #     ].resample(step * scale, offset=i*step).aggregate(resampling_func)
+        #     if self.start_idx in df.index:
+        #         break
 
         self.prices, self.signal_features = self.process_data(df)
         self.last_trade_idx = None
@@ -323,8 +337,8 @@ if __name__ == "__main__":
         return df.close, features
 
     # env = TradingEnv2(df["2014":], 500, process_data=process_data)
-    env = TradingEnv2(df["2014":], max_episode_steps="14D", window_size=20)
-    obs, _ = env.reset('2018-08-18 17:16:00')
+    env = TradingEnv2(df["2014":], max_episode_steps=500, window_size=20)
+    obs, _ = env.reset('2018-09-10 07:32:00')
     done = False
     while not done:
         # action = env.action_space.sample()
