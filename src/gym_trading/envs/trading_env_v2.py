@@ -216,14 +216,9 @@ class TradingEnv2(gymnasium.Env):
             self.start_idx - pd.Timedelta(self.std_window):self.end_idx + step * scale * 2
         ].resample(step * scale, offset=-offset).aggregate(resampling_func)
 
-        # (df.index[df.index > self.start_idx] - self.start_idx)[0]
-
-        # for i in range(scale):
-        #     df = self.df[
-        #         self.start_idx - pd.Timedelta(self.std_window):self.end_idx + step * scale * 2
-        #     ].resample(step * scale, offset=i*step).aggregate(resampling_func)
-        #     if self.start_idx in df.index:
-        #         break
+        if df.close[self.start_idx:self.end_idx].isna().mean() > 0.3:
+            # unlucky guess with too many missing values for the episode
+            return self.reset()
 
         self.prices, self.signal_features = self.process_data(df)
         self.last_trade_idx = None
