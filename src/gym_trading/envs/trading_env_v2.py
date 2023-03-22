@@ -97,13 +97,14 @@ class TradingEnv2(gymnasium.Env):
     def default_preprocessor(df: pd.DataFrame, window: int, std: float):
         mask = range(window)
         price = df.close.fillna(method="ffill")
-        features = pd.concat(
-            [
-                (price.shift(i + 1) - price.shift(i)) / (price.shift(i + 1) + price.shift(i))
-                # df.close.shift(i) / df.close
-                for i in mask
-            ], axis=1
-        ).fillna(0)
+
+        dp = (price.shift(1) - price) / (price.shift(1) + price)
+        features = pd.concat([dp.shift(i) for i in mask], axis=1).fillna(0)
+
+        # features = pd.concat(
+        #     [df.close.shift(i) / df.close for i in mask], axis=1
+        # ).fillna(0)
+
         return price, features / std
     
     def get_observation(self) -> Dict[str, Any]:
