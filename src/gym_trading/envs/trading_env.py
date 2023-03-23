@@ -157,7 +157,8 @@ class TradingEnv(gymnasium.Env):
                 self._update_profit_on_deal_close()
             self._last_trade_tick = self._current_tick
 
-        self._current_tick += 1
+        if not done:
+            self._current_tick += 1
         self._old_position = self._position
         self._position = next_position
         reward = self._calculate_reward()
@@ -274,5 +275,5 @@ if __name__ == '__main__':
     print(env._total_profit)
     print(env._start_tick)
     print(env._total_reward)
-    env.render()
+    # env.render()
         

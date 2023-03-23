@@ -6,19 +6,10 @@ import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 
-
-class Position(Enum):
-    """
-    The Position class is an enumeration of the possible positions
-    that a trader can take in the market
-    """
-
-    SHORT = 0
-    FLAT = 1
-    LONG = 2
+from .trading_env import Position, TradingEnv
 
 
-class TradingEnv2(gymnasium.Env):
+class TradingEnv2(TradingEnv):
     """
     It's a gymnasium environment that takes a dataframe of stock prices
     and allows you to trade on it.
@@ -28,33 +19,9 @@ class TradingEnv2(gymnasium.Env):
 
     df - expected to be indexed by pd.DatetimeIndex
     """
-    metadata = {}
 
-    action_space: gymnasium.spaces.Discrete
-    observation_space: gymnasium.spaces.Dict
-    reward_range: Tuple[float, float]
-
-    max_episode_steps: Union[int, str]
-    comission_fee: float
-
-    df: pd.DataFrame
-    prices: pd.Series
-    signal_features: pd.DataFrame
-
-    std_window: str     # Window for calculating volatility on episode start
-
-    start_idx: pd.Timestamp
-    end_idx: pd.Timestamp
-    current_idx: pd.Timestamp
-    idx_step: pd.Timedelta
-
-    total_reward: float
-    total_profit: float
-    position: Position
-    old_position: Position
-    position_history: List[Position]
-    last_trade_idx: pd.Timestamp
-
+    _std_window: str     # Window for calculating volatility on episode start
+    _std_threshold: float
 
     def __init__(
         self,
@@ -68,10 +35,10 @@ class TradingEnv2(gymnasium.Env):
     ) -> None:
         self.df = df.resample((df.index[1:] - df.index[:-1]).min()).last()
         self.max_episode_steps = max_episode_steps
-        self.std_threshold = std_threshold
-        self.std_window = std_window
-        self.comission_fee = comission_fee
-        self.process_data = process_data if process_data is not None \
+        self._std_threshold = std_threshold
+        self._std_window = std_window
+        self._comission_fee = comission_fee
+        self._process_data = process_data if process_data is not None \
             else lambda x: self.default_preprocessor(x, window_size, std_threshold)
         
         self.reset()    # In order to call get_observation() for spaces
@@ -82,7 +49,7 @@ class TradingEnv2(gymnasium.Env):
                 "features": gymnasium.spaces.Box(
                     -np.inf,
                     np.inf,
-                    shape=self.get_observation()["features"].shape,
+                    shape=self._get_observation()["features"].shape,
                     dtype=float,
                 ),
                 "price_change": gymnasium.spaces.Box(
@@ -99,106 +66,37 @@ class TradingEnv2(gymnasium.Env):
         price = df.close.fillna(method="ffill")
 
         dp = (price.shift(1) - price) / (price.shift(1) + price)
-        features = pd.concat([dp.shift(i) for i in mask], axis=1).fillna(0)
+        features = pd.concat([dp.shift(i) for i in mask], axis=1).fillna(0).values
 
         # features = pd.concat(
         #     [df.close.shift(i) / df.close for i in mask], axis=1
-        # ).fillna(0)
+        # ).fillna(0).values
 
         return price, features / std
     
-    def get_observation(self) -> Dict[str, Any]:
-        price_change = 0
-        if self.position != Position.FLAT:
-            price_change = (
-                self.prices[self.current_idx] - self.prices[self.last_trade_idx]
-            ) / self.prices[self.last_trade_idx]
-        position = self.position.value - 1
-        features = self.signal_features.loc[self.current_idx].values
-        time_left = np.clip((self.end_idx - self.current_idx) / self.idx_step / 100.0, 0, 1)
+    def reset(self, idx_start=None, **kwargs) -> Tuple[Any, Dict]:
+        super(TradingEnv, self).reset(**kwargs)
 
-        return {
-            "features": features,
-            "price_change": np.array([price_change * 10], dtype=float), # multiply by 10 to normalize
-            "position": np.array([position], dtype=float),
-            "time_left": np.array([time_left], dtype=float),
-        }
-    
-    def calculate_reward(self) -> float:
-        new_pos = self.position.value
-        old_pos = self.old_position.value
-        reward = -self.comission_fee * abs(new_pos - old_pos)
-        
-        new_price = self.prices[self.current_idx]
-        old_price = self.prices[self.current_idx - self.idx_step]
-        reward += np.log(new_price / old_price) * (new_pos - 1)
-
-        return reward
-    
-    def update_profit_on_deal_close(self) -> None:
-        current_price = self.prices[self.current_idx]
-        last_trade_price = self.prices[self.last_trade_idx]
-
-        if self.position == Position.LONG:
-            # Closing LONG position
-            last_trade_price *= 1 + self.comission_fee
-            current_price *= 1 - self.comission_fee
-            shares = self.total_profit / last_trade_price
-            self.total_profit = shares * current_price
-        elif self.position == Position.SHORT:
-            # Closing SHORT position
-            last_trade_price *= 1 - self.comission_fee
-            current_price *= 1 + self.comission_fee
-            shares = self.total_profit / current_price
-            self.total_profit = shares * last_trade_price
-
-    def step(self, action) -> Tuple[np.array, float, bool, bool, dict]:
-        # obs, reward, terminated, truncated, info
-        done = (self.current_idx + self.idx_step) >= self.end_idx
-        next_position = Position(action) if not done else Position.FLAT
-        self.position_history.append(next_position)
-
-        if self.position != next_position:
-            if self.position != Position.FLAT:
-                self.update_profit_on_deal_close()
-            self.last_trade_idx = self.current_idx
-
-        if not done:
-            self.current_idx += self.idx_step
-        self.old_position = self.position
-        self.position = next_position
-        reward = self.calculate_reward()
-        self.total_reward += reward
-
-        return (self.get_observation(), reward, done, False, {})
-
-    def reset(self, start_idx=None, **kwargs) -> Tuple[Any, Dict]:
-        super().reset(**kwargs)
-
-        idx1 = self.df.index[0] + pd.Timedelta(self.std_window)
+        idx1 = self.df.index[0] + pd.Timedelta(self._std_window)
         idx2 = self.df.index[-1] - pd.Timedelta("14D")  #=========================HARDCODED=VALUE===========
 
-        self.start_idx = pd.Timestamp(start_idx) if start_idx is not None else \
+        start_idx = pd.Timestamp(idx_start) if idx_start is not None else \
             self.df[idx1:idx2].index[np.random.randint(len(self.df[idx1:idx2].index))]
 
-        p = self.df.close[self.start_idx - pd.Timedelta(self.std_window):self.start_idx]
+        p = self.df.close[start_idx - pd.Timedelta(self._std_window):start_idx]
         dp = (p.shift(1) - p)/  (p.shift(1) + p)
         if dp.isna().mean() > 0.5:
-            if start_idx is not None:
+            if idx_start is not None:
                 raise RuntimeError("Too many NaN values, can't determine optimal scale")
             return self.reset()
         std = dp.std()
-        scale = int(max(np.rint((self.std_threshold / std)**2), 1)) # Number of candles to  combine
+        scale = int(max(np.rint((self._std_threshold / std)**2), 1)) # Number of candles to  combine
         step = self.df.index[-1] - self.df.index[-2]
 
         episode_duration = pd.Timedelta(self.max_episode_steps) if isinstance(self.max_episode_steps, str) \
             else self.max_episode_steps * scale * step
-        self.end_idx = self.start_idx + episode_duration
-
-        self.end_idx = min(self.end_idx, self.df.index[-1]) # in case idx2 estimation was bad
-
-        self.current_idx = self.start_idx
-        self.idx_step = scale * step
+        end_idx = start_idx + episode_duration
+        end_idx = min(end_idx, self.df.index[-1]) # in case idx2 estimation was bad
 
         resampling_func = dict(
             open = "first",
@@ -210,109 +108,31 @@ class TradingEnv2(gymnasium.Env):
         resampling_func = {c: resampling_func[c] for c in self.df.columns}
 
         df = self.df[
-            self.start_idx - pd.Timedelta(self.std_window):self.end_idx + step * scale * 2
+            start_idx - pd.Timedelta(self._std_window):end_idx + step * scale * 2
         ].resample(step * scale, offset=0).aggregate(resampling_func)
-        offset = (df[self.start_idx:].index - self.start_idx)[0]
+        offset = (df[start_idx:].index - start_idx)[0]
         df = self.df[
-            self.start_idx - pd.Timedelta(self.std_window):self.end_idx + step * scale * 2
+            start_idx - pd.Timedelta(self._std_window):end_idx + step * scale * 2
         ].resample(step * scale, offset=-offset).aggregate(resampling_func)
 
-        if df.close[self.start_idx:self.end_idx].isna().mean() > 0.3:
+        if df.close[start_idx:end_idx].isna().mean() > 0.3:
             # unlucky guess with too many missing values for the episode
             return self.reset()
 
-        self.prices, self.signal_features = self.process_data(df)
-        self.last_trade_idx = None
-        self.position = Position.FLAT
-        self.old_position = None
-        self.position_history = []
-        self.total_reward = 0.
-        self.total_profit = 1.
+        self.prices, self.signal_features = self._process_data(df)
 
-        return self.get_observation(), {}
-    
-    def close(self) -> None:
-        pass
+        self._start_tick = (self.prices.index < start_idx).sum()
+        self._end_tick = (self.prices.index < end_idx).sum()
+        self._current_tick = self._start_tick
 
-    def get_optimal_action(self) -> Position:
-        if self.current_idx + self.idx_step >= self.end_idx:
-            return self.position
-        s = np.sign(
-            self.prices[self.current_idx + self.idx_step] - self.prices[self.current_idx]
-        )
-        if s == 0:
-            return self.position
+        self._last_trade_tick = None
+        self._position = Position.FLAT
+        self._old_position = None
+        self._position_history = []
+        self._total_reward = 0.
+        self._total_profit = 1.
 
-        threshold = (1 + self.comission_fee) / (1 - self.comission_fee)
-        p_ = self.prices[self.current_idx]
-        j = self.current_idx + self.idx_step
-        while j <= self.end_idx:
-            p_ = s * max(s * p_, s * self.prices[j])
-            delta_p = (p_ / self.prices[self.current_idx]) ** s
-            drawback = (p_ / self.prices[j]) ** s
-            if drawback > threshold or drawback > delta_p:
-                break
-            j += self.idx_step
-
-        if delta_p < threshold:
-            return self.position
-        return Position(1 + s)
-    
-    def get_max_profit(self) -> float:
-        threshold = (1 + self.comission_fee) / (1 - self.comission_fee)
-        profit = 1.
-        i = self.start_idx
-
-        while i + self.idx_step < self.end_idx:
-            s = np.sign(self.prices[i + self.idx_step] - self.prices[i])
-            if s == 0:
-                i += self.idx_step
-                continue
-            p_ = self.prices[i]
-            idx_extremum = i
-            j = i + self.idx_step
-            while j <= self.end_idx:
-                p_ = s * max(s * p_, s * self.prices[j])
-                if np.isclose(self.prices[j], p_):
-                    idx_extremum = j
-                delta_p = (p_ / self.prices[i]) ** s
-                drawback = (p_ / self.prices[j]) ** s
-                if drawback > threshold or drawback > delta_p:
-                    break
-                j += self.idx_step
-
-            if delta_p >= threshold:
-                profit *= (delta_p / threshold)
-
-            i = idx_extremum
-
-        return profit
-    
-    def render(self) -> None:
-        plt.style.use("seaborn")
-        plt.figure(figsize=(25, 10), dpi=200)
-
-        index = self.prices[self.start_idx:self.end_idx].index
-        if len(index) > len(self.position_history):
-            index = index[:-1]
-        df = pd.DataFrame(dict(
-            price=self.prices[index],
-            position=self.position_history,
-        ))
-    
-        plt.plot(df.price, "b", alpha=0.3)
-        plt.plot(df.price, "b.", alpha=0.3)
-        plt.plot(df.price[df.position == Position.SHORT], "ro", alpha=0.9)
-        # plt.plot(df.price[df.position == Position.FLAT], "bo", alpha=0.3)
-        plt.plot(df.price[df.position == Position.LONG], "go", alpha=0.9)
-
-        info = f"total profit: {self.total_profit:.3f};  idx_start: {self.start_idx};  \
-            max possible profit: {self.get_max_profit():.3f};   scale={self.prices.index.freq};"
-        plt.title(info, fontsize=20)
-        plt.xlabel("datetime")
-        plt.ylabel("Price")
-
-        plt.show()
+        return self._get_observation(), {}
 
 
 if __name__ == "__main__":
@@ -321,33 +141,13 @@ if __name__ == "__main__":
     df.time = pd.to_datetime(df.time, unit="ms")
     df.set_index("time", inplace=True)
 
-    def process_data(df):
-        mask = range(20)
-        features = pd.concat(
-            [
-                # (df.close.shift(i + 1) - df.close.shift(i)) / (df.close.shift(i + 1) + df.close.shift(i))
-                df.close.shift(i) / df.close
-                for i in mask
-            ], axis=1
-        )
-        return df.close, features
-
-    # env = TradingEnv2(df["2014":], 500, process_data=process_data)
     env = TradingEnv2(df["2014":], max_episode_steps=500, window_size=20)
-    obs, _ = env.reset('2018-09-10 07:32:00')
+    # obs, _ = env.reset('2018-09-10 07:32:00')
+    obs, _ = env.reset()
     done = False
     while not done:
         # action = env.action_space.sample()
         action = env.get_optimal_action()
         obs, _, done, _, _ = env.step(action)
-    print(env.total_profit, env.total_reward)
+    print(env._total_profit, env._total_reward)
     # env.render()
-
-    # volat = []
-    # for i in range(1000):
-    #     env.reset()
-    #     features = env.signal_features.loc[env.start_idx:env.end_idx].values
-    #     std = features[features != 0].std()
-    #     if not np.isnan(std):
-    #         volat.append(std)
-    # print(f"{np.mean(volat):.4f} ± {np.std(volat):.4f}")
