@@ -65,7 +65,7 @@ class TradingEnv2(TradingEnv):
         mask = range(window)
         price = df.close.fillna(method="ffill")
 
-        dp = (price.shift(1) - price) / (price.shift(1) + price)
+        dp = (price - price.shift(1)) / (price + price.shift(1))
         features = pd.concat([dp.shift(i) for i in mask], axis=1).fillna(0).values
 
         # features = pd.concat(
