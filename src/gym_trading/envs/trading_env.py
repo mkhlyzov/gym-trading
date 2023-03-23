@@ -244,17 +244,20 @@ class TradingEnv(gymnasium.Env):
 
         index = self.prices.index[self._start_tick: self._end_tick]
         df = pd.DataFrame(dict(
-            price=self.prices[index],
+            price=self.prices[index[:len(self._position_history)]],
             position=self._position_history,
         ))
-    
-        plt.plot(df.price, "b", alpha=0.3)
-        plt.plot(df.price, "b.", alpha=0.3)
+
+        plt.plot(self.prices[index], "b", alpha=0.3)
+        plt.plot(self.prices[index], "b.", alpha=0.3)
         plt.plot(df.price[df.position == Position.SHORT], "ro", alpha=0.9)
-        # plt.plot(df.price[df.position == Position.FLAT], "bo", alpha=0.3)
         plt.plot(df.price[df.position == Position.LONG], "go", alpha=0.9)
 
-        info = f"total profit: {self._total_profit:.3f};  idx_start: {self._start_tick};  max possible profit: {self.get_max_profit():.3f};"
+        info = f"total profit: {self._total_profit:.3f};    " +\
+            f"idx_start: {self.prices.index[self._start_tick]};   " +\
+            f"max possible profit: {self.get_max_profit():.3f};   "
+        if self.prices.index.freq is not None:
+            info += f"scale: {self.prices.index.freq};"
         plt.title(info, fontsize=20)
         plt.xlabel("datetime")
         plt.ylabel("Price")
