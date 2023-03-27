@@ -258,6 +258,8 @@ class TradingEnv(gymnasium.Env):
             f"max possible profit: {self.get_max_profit():.3f};   "
         if self.prices.index.freq is not None:
             info += f"scale: {self.prices.index.freq};"
+        if isinstance(index, pd.DatetimeIndex):
+            info += f"\nepisode duration: {index[-1] - index[0]}"
         plt.title(info, fontsize=20)
         plt.xlabel("datetime")
         plt.ylabel("Price")
