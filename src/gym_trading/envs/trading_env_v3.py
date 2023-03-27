@@ -96,13 +96,13 @@ class TradingEnv3(TradingEnv):
 
         indices = (
             self._compute_indices_num_steps(
-                np.flip(self.df["step"].values), 0, self.max_episode_steps + 1
+                np.flip(self.df["step"].values), 0, self.max_episode_steps * np.sqrt(2)
             )
             if isinstance(self.max_episode_steps, int)
             else self._compute_indices_max_sum(
                 np.flip(self.df["step"].values),
                 0,
-                pd.Timedelta(self.max_episode_steps) / self.df.index.freq,
+                pd.Timedelta(self.max_episode_steps) / self.df.index.freq * np.sqrt(2),
             )
         )
         idx2 = len(self.df) - np.max(indices)
@@ -117,7 +117,10 @@ class TradingEnv3(TradingEnv):
     ) -> np.ndarray:
         indices = [start_idx]
         for _ in range(num_steps - 1):
-            indices.append(indices[-1] + steps[indices[-1]])
+            new_idx = indices[-1] + steps[indices[-1]]
+            if new_idx >= len(steps):
+                break
+            indices.append(new_idx)
         return np.array(indices)
 
     @staticmethod
@@ -129,7 +132,10 @@ class TradingEnv3(TradingEnv):
         sum_steps = 0
         while sum_steps < max_sum:
             step = steps[indices[-1]]
-            indices.append(indices[-1] + step)
+            new_idx = indices[-1] + step
+            if new_idx >= len(steps):
+                break
+            indices.append(new_idx)
             sum_steps += step
         return np.array(indices)
 
