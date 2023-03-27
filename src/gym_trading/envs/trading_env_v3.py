@@ -43,8 +43,7 @@ class TradingEnv3(TradingEnv):
         self.window_size = window_size
         self._comission_fee = comission_fee
 
-        self._idx1 = 100
-        self._idx2 = len(df) - 60 * 1000
+        self._idx1, self._idx2 = self._get_idx1_idx2()
         self._std_threshold = std_threshold
         self._scale = scale
 
@@ -90,6 +89,26 @@ class TradingEnv3(TradingEnv):
         df["step"] = np.rint(steps).astype(int)
         df["step"].replace(0, 1, inplace=True)
         return df
+    
+    def _get_idx1_idx2(self,) -> Tuple[int, int]:
+        min_indices = np.arange(len(self.df)) - self.df["step"] * self.window_size
+        idx1 = np.where(min_indices <= 0)[0][-1] + 1
+
+        indices = (
+            self._compute_indices_num_steps(
+                np.flip(self.df["step"].values), 0, self.max_episode_steps + 1
+            )
+            if isinstance(self.max_episode_steps, int)
+            else self._compute_indices_max_sum(
+                np.flip(self.df["step"].values),
+                0,
+                pd.Timedelta(self.max_episode_steps) / self.df.index.freq,
+            )
+        )
+        idx2 = len(self.df) - np.max(indices)
+
+        return idx1, idx2
+
 
     @staticmethod
     @numba.jit(nopython=True)
