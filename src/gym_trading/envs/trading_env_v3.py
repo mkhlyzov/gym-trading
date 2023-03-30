@@ -37,6 +37,7 @@ class TradingEnv3(TradingEnv):
         comission_fee: float = 0.0010,
         std_threshold: float = 0.0040,
         scale: int = None,
+        reward_mode: str = "step",
     ) -> None:
         self.df = self._set_scaling_step(df, std_threshold, window_size, scale)
         self.max_episode_steps = max_episode_steps
@@ -46,6 +47,13 @@ class TradingEnv3(TradingEnv):
         self._idx1, self._idx2 = self._get_idx1_idx2()
         self._std_threshold = std_threshold
         self._scale = scale
+
+        if reward_mode == "step":
+            self._calculate_reward = self._calculate_reward_per_step
+        elif reward_mode == "trade":
+            self._calculate_reward = self._calculate_reward_per_trade
+        else:
+            raise ValueError(f"Unsupported reward mode: {reward_mode}")
 
         self.reset()  # In order to call get_observation() for spaces
         # spaces

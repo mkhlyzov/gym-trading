@@ -32,6 +32,7 @@ class TradingEnv2(TradingEnv):
         comission_fee: float = 0.001,
         std_threshold: float = 0.0020,
         std_window: str = "7D",
+        reward_mode: str = "step",
     ) -> None:
         self.df = df.resample((df.index[1:] - df.index[:-1]).min()).last()
         self.max_episode_steps = max_episode_steps
@@ -40,6 +41,13 @@ class TradingEnv2(TradingEnv):
         self._comission_fee = comission_fee
         self._process_data = process_data if process_data is not None \
             else lambda x: self.default_preprocessor(x, window_size, std_threshold)
+        
+        if reward_mode == "step":
+            self._calculate_reward = self._calculate_reward_per_step
+        elif reward_mode == "trade":
+            self._calculate_reward = self._calculate_reward_per_trade
+        else:
+            raise ValueError(f"Unsupported reward mode: {reward_mode}")
         
         self.reset()    # In order to call get_observation() for spaces
         # spaces

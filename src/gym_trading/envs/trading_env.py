@@ -40,6 +40,9 @@ class TradingEnv(gymnasium.Env):
     _old_position: Position
     _position_history: List[Position]
     _last_trade_tick: int
+    _old_profit: float
+
+    _calculate_raward: Callable
 
     def __init__(
         self,
@@ -49,6 +52,7 @@ class TradingEnv(gymnasium.Env):
         window_size: int = 20,
         comission_fee: float = 7e-4,
         process_data: Callable = None,
+        reward_mode: str = "step",
     ) -> None:
         self.df = df
 
@@ -56,6 +60,13 @@ class TradingEnv(gymnasium.Env):
         self.window_size = window_size
         self._comission_fee = comission_fee
         self.max_episode_steps = max_episode_steps
+
+        if reward_mode == "step":
+            self._calculate_reward = self._calculate_reward_per_step
+        elif reward_mode == "trade":
+            self._calculate_reward = self._calculate_reward_per_trade
+        else:
+            raise ValueError(f"Unsupported reward mode: {reward_mode}")
 
         self.prices, self.signal_features = (
             process_data(self) if process_data else self._process_data()
@@ -122,7 +133,7 @@ class TradingEnv(gymnasium.Env):
             "time_left": np.array([time_left], dtype=float),
         }
 
-    def _calculate_reward(self) -> float:
+    def _calculate_reward_per_step(self) -> float:
         new_price = self.prices[self._current_tick]
         old_price = self.prices[self._current_tick - 1]
         new_pos = self._position.value
@@ -131,6 +142,9 @@ class TradingEnv(gymnasium.Env):
         reward = np.log(new_price / old_price) * (new_pos - 1)
         reward -= self._comission_fee * abs(new_pos - old_pos)
         return reward
+    
+    def _calculate_reward_per_trade(self) -> float:
+        return np.log(self._total_profit / self._old_profit)
 
     def _update_profit_on_deal_close(self) -> None:
         current_price = self.prices[self._current_tick]
@@ -155,6 +169,7 @@ class TradingEnv(gymnasium.Env):
         next_position = Position(action) if not done else Position.FLAT
         self._position_history.append(next_position)
 
+        self._old_profit = self._total_profit
         if self._position != next_position:
             if self._position != Position.FLAT:
                 self._update_profit_on_deal_close()
@@ -183,6 +198,7 @@ class TradingEnv(gymnasium.Env):
         self._position_history = []
         self._total_reward = 0
         self._total_profit = 1
+        self._old_profit = None
 
         return self._get_observation(), {}
 
