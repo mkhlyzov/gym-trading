@@ -20,6 +20,7 @@ dependencies = [
   "gymnasium",
   "numpy",
   "pandas",
+  "numba",
   "matplotlib",
 ]
 
