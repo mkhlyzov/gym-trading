@@ -89,8 +89,10 @@ class TradingEnv3(TradingEnv):
         df["step"] = np.rint(steps).astype(int)
         df["step"].replace(0, 1, inplace=True)
         return df
-    
-    def _get_idx1_idx2(self,) -> Tuple[int, int]:
+
+    def _get_idx1_idx2(
+        self,
+    ) -> Tuple[int, int]:
         min_indices = np.arange(len(self.df)) - self.df["step"] * self.window_size
         idx1 = np.where(min_indices <= 0)[0][-1] + 1
 
@@ -108,7 +110,6 @@ class TradingEnv3(TradingEnv):
         idx2 = len(self.df) - np.max(indices)
 
         return idx1, idx2
-
 
     @staticmethod
     @numba.jit(nopython=True)
@@ -146,23 +147,6 @@ class TradingEnv3(TradingEnv):
         close = self.df["close"].values[indices]
         dp = (close[1:] - close[:-1]) / (close[1:] + close[:-1])
         return dp / self._std_threshold
-
-    def _get_observation(self) -> Tuple[np.array, float, bool, bool, dict]:
-        price_change = 0
-        if self._position != Position.FLAT:
-            price_change = (
-                self.prices[self._current_tick] - self.prices[self._last_trade_tick]
-            ) / self.prices[self._last_trade_tick]
-        position = self._position.value - 1
-        features = self._get_features()
-        time_left = np.clip((self._end_tick - self._current_tick) / 100.0, 0, 1)
-
-        return {
-            "features": features,
-            "price_change": np.array([price_change], dtype=float),
-            "position": np.array([position], dtype=float),
-            "time_left": np.array([time_left], dtype=float),
-        }
 
     def reset(self, idx_start: Union[int, str] = None, **kwargs) -> Tuple[Any, Dict]:
         super(TradingEnv, self).reset(**kwargs)

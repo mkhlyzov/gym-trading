@@ -102,14 +102,17 @@ class TradingEnv(gymnasium.Env):
 
         return prices, signal_features
 
+    def _get_features(self) -> np.ndarray:
+        return self.signal_features[self._current_tick]
+    
     def _get_observation(self) -> Dict[str, Any]:
         price_change = 0
         if self._position != Position.FLAT:
-            price_change = (
-                self.prices[self._current_tick] - self.prices[self._last_trade_tick]
-            ) / self.prices[self._last_trade_tick]
+            price_change = np.log(
+                self.prices[self._current_tick] / self.prices[self._last_trade_tick]
+            )
         position = self._position.value - 1
-        features = self.signal_features[self._current_tick]
+        features = self._get_features()
         time_left = np.clip((self._end_tick - self._current_tick) / 100.0, 0, 1)
 
         return {
