@@ -1,15 +1,13 @@
-from enum import Enum
-from typing import Any, Callable, Dict, List, Tuple, Union
+from typing import Any, Dict, Tuple, Union
 
-import gymnasium
 import numba
 import numpy as np
 import pandas as pd
 
-from .trading_env import Position, TradingEnv
+from .base_env import BaseTradingEnv, Position
 
 
-class TradingEnv3(TradingEnv):
+class TradingEnv3(BaseTradingEnv):
     """
     It's a gymnasium environment that takes a dataframe of stock prices
     and allows you to trade on it.
@@ -20,8 +18,6 @@ class TradingEnv3(TradingEnv):
     same.
     """
 
-    prices: pd.Series
-
     # [_idx1, _idx2) represent a range of valid indexes to sample starting
     # index from on a start of a new episode
     _idx1: int
@@ -31,6 +27,7 @@ class TradingEnv3(TradingEnv):
 
     def __init__(
         self,
+        *,
         df: pd.DataFrame,
         max_episode_steps: Union[int, str] = "14D",
         window_size: int = 20,
@@ -42,36 +39,14 @@ class TradingEnv3(TradingEnv):
         self.df = self._set_scaling_step(df, std_threshold, window_size, scale)
         self.max_episode_steps = max_episode_steps
         self.window_size = window_size
-        self._comission_fee = comission_fee
 
         self._idx1, self._idx2 = self._get_idx1_idx2()
         self._std_threshold = std_threshold
         self._scale = scale
 
-        if reward_mode == "step":
-            self._calculate_reward = self._calculate_reward_per_step
-        elif reward_mode == "trade":
-            self._calculate_reward = self._calculate_reward_per_trade
-        else:
-            raise ValueError(f"Unsupported reward mode: {reward_mode}")
-
-        self.reset()  # In order to call get_observation() for spaces
-        # spaces
-        self.action_space = gymnasium.spaces.Discrete(len(Position))
-        self.observation_space = gymnasium.spaces.Dict(
-            {
-                "features": gymnasium.spaces.Box(
-                    -np.inf,
-                    np.inf,
-                    shape=self._get_observation()["features"].shape,
-                    dtype=float,
-                ),
-                "price_change": gymnasium.spaces.Box(
-                    -np.inf, np.inf, shape=(1,), dtype=float
-                ),
-                "position": gymnasium.spaces.Box(0, 1, shape=(1,), dtype=float),
-                "time_left": gymnasium.spaces.Box(0, 1, shape=(1,), dtype=float),
-            }
+        super().__init__(
+            df=self.df, max_episode_steps=max_episode_steps, window_size=window_size,
+            comission_fee=comission_fee, reward_mode=reward_mode
         )
 
     def _set_scaling_step(
@@ -157,7 +132,7 @@ class TradingEnv3(TradingEnv):
         return dp / self._std_threshold
 
     def reset(self, idx_start: Union[int, str] = None, **kwargs) -> Tuple[Any, Dict]:
-        super(TradingEnv, self).reset(**kwargs)
+        super(BaseTradingEnv, self).reset(**kwargs)
 
         start_idx = (
             idx_start
@@ -208,7 +183,7 @@ if __name__ == "__main__":
     df = pd.read_csv("~/Downloads/archive/btcusd.csv")
     df.time = pd.to_datetime(df.time, unit="ms")
     df.set_index("time", inplace=True)
-    env = TradingEnv3(df, max_episode_steps=500, std_threshold=0.0020)
+    env = TradingEnv3(df=df, max_episode_steps=500, std_threshold=0.0020)
     env.reset()
     env.reset()
     done = False

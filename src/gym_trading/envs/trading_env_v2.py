@@ -1,15 +1,12 @@
-from enum import Enum
-from typing import Any, Callable, Dict, List, Tuple, Union
+from typing import Any, Callable, Dict, Tuple, Union
 
-import gymnasium
 import numpy as np
 import pandas as pd
-from matplotlib import pyplot as plt
 
-from .trading_env import Position, TradingEnv
+from .base_env import BaseTradingEnv, Position
 
 
-class TradingEnv2(TradingEnv):
+class TradingEnv2(BaseTradingEnv):
     """
     It's a gymnasium environment that takes a dataframe of stock prices
     and allows you to trade on it.
@@ -25,6 +22,7 @@ class TradingEnv2(TradingEnv):
 
     def __init__(
         self,
+        *,
         df: pd.DataFrame,
         max_episode_steps: Union[int, str] = "14D",
         process_data: Callable = None,
@@ -34,42 +32,21 @@ class TradingEnv2(TradingEnv):
         std_window: str = "7D",
         reward_mode: str = "step",
     ) -> None:
-        self.df = df.resample((df.index[1:] - df.index[:-1]).min()).last()
-        self.max_episode_steps = max_episode_steps
+        df = df.resample((df.index[1:] - df.index[:-1]).min()).last()
         self._std_threshold = std_threshold
         self._std_window = std_window
-        self._comission_fee = comission_fee
         self._process_data = process_data if process_data is not None \
             else lambda x: self.default_preprocessor(x, window_size, std_threshold)
         
-        if reward_mode == "step":
-            self._calculate_reward = self._calculate_reward_per_step
-        elif reward_mode == "trade":
-            self._calculate_reward = self._calculate_reward_per_trade
-        else:
-            raise ValueError(f"Unsupported reward mode: {reward_mode}")
-        
-        self.reset()    # In order to call get_observation() for spaces
-        # spaces
-        self.action_space = gymnasium.spaces.Discrete(len(Position))
-        self.observation_space = gymnasium.spaces.Dict(
-            {
-                "features": gymnasium.spaces.Box(
-                    -np.inf,
-                    np.inf,
-                    shape=self._get_observation()["features"].shape,
-                    dtype=float,
-                ),
-                "price_change": gymnasium.spaces.Box(
-                    -np.inf, np.inf, shape=(1,), dtype=float
-                ),
-                "position": gymnasium.spaces.Box(0, 1, shape=(1,), dtype=float),
-                "time_left": gymnasium.spaces.Box(0, 1, shape=(1,), dtype=float),
-            }
+        super().__init__(
+            df=df, max_episode_steps=max_episode_steps, window_size=window_size,
+            comission_fee=comission_fee, reward_mode=reward_mode
         )
 
     @staticmethod
-    def default_preprocessor(df: pd.DataFrame, window: int, std: float):
+    def default_preprocessor(
+        df: pd.DataFrame, window: int, std: float
+    ) -> Tuple[pd.Series, np.ndarray]:
         mask = range(window)
         price = df.close.fillna(method="ffill")
 
@@ -82,8 +59,11 @@ class TradingEnv2(TradingEnv):
 
         return price, features / std
     
+    def _get_features(self) -> np.ndarray:
+        return self.signal_features[self._current_tick]
+    
     def reset(self, idx_start=None, **kwargs) -> Tuple[Any, Dict]:
-        super(TradingEnv, self).reset(**kwargs)
+        super(BaseTradingEnv, self).reset(**kwargs)
 
         idx1 = self.df.index[0] + pd.Timedelta(self._std_window)
         idx2 = self.df.index[-1] - pd.Timedelta("14D")  #=========================HARDCODED=VALUE===========
@@ -149,7 +129,7 @@ if __name__ == "__main__":
     df.time = pd.to_datetime(df.time, unit="ms")
     df.set_index("time", inplace=True)
 
-    env = TradingEnv2(df["2014":], max_episode_steps=500, window_size=20)
+    env = TradingEnv2(df=df["2014":], max_episode_steps=500, window_size=20)
     # obs, _ = env.reset('2018-09-10 07:32:00')
     obs, _ = env.reset()
     done = False
