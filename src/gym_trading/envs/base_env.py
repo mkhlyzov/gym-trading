@@ -88,7 +88,7 @@ class BaseTradingEnv(gymnasium.Env):
                     dtype=float,
                 ),
                 "price_change": gymnasium.spaces.Box(
-                    -np.inf, np.inf, shape=(1,), dtype=float
+                    -np.pi / 2, np.pi / 2, shape=(1,), dtype=float
                 ),
                 "position": gymnasium.spaces.Box(-1, 1, shape=(1,), dtype=float),
                 "time_left": gymnasium.spaces.Box(0, np.inf, shape=(1,), dtype=float),
@@ -101,9 +101,11 @@ class BaseTradingEnv(gymnasium.Env):
     def _get_observation(self) -> Dict[str, Any]:
         price_change = 0
         if self._position != Position.FLAT:
+            # applying np.log to make symmetrical, np.arctan to make it bounded
             price_change = np.log(
                 self.prices[self._current_tick] / self.prices[self._last_trade_tick]
             )
+            price_change = np.arctan(price_change * 100)
         position = self._position.value - 1
         features = self._get_features()
         time_left = np.log(1 + (self._end_tick - self._current_tick) / 100)
