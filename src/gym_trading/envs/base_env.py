@@ -72,6 +72,9 @@ class BaseTradingEnv(gymnasium.Env):
             self._calculate_reward = self._calculate_reward_per_step
         elif reward_mode == "trade":
             self._calculate_reward = self._calculate_reward_per_trade
+        elif reward_mode == "mixed":
+            alpha = 0.1
+            self._calculate_raward = lambda: self._calculate_reward_mixed(alpha)
         else:
             raise ValueError(f"Unsupported reward mode: {reward_mode}")
 
@@ -129,6 +132,11 @@ class BaseTradingEnv(gymnasium.Env):
     
     def _calculate_reward_per_trade(self) -> float:
         return np.log(self._total_profit / self._old_profit)
+
+    def _calculate_reward_mixed(self, alpha: float) -> float:
+        r_step = self._calculate_reward_per_step()
+        r_trade = self._calculate_reward_per_trade()
+        return r_step * alpha + r_trade * (1 - alpha)
 
     def _update_profit_on_deal_close(self) -> None:
         current_price = self.prices[self._current_tick]
