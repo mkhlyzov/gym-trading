@@ -72,9 +72,13 @@ class BaseTradingEnv(gymnasium.Env):
             self._calculate_reward = self._calculate_reward_per_step
         elif reward_mode == "trade":
             self._calculate_reward = self._calculate_reward_per_trade
-        elif reward_mode == "mixed":
-            alpha = 0.1
-            self._calculate_raward = lambda: self._calculate_reward_mixed(alpha)
+        elif reward_mode.startswith("mixed"):
+            alpha = (
+                0.1
+                if len(reward_mode.split("_")) == 1
+                else float(reward_mode.split("_")[-1])
+            )
+            self._calculate_reward = lambda: self._calculate_reward_mixed(alpha)
         else:
             raise ValueError(f"Unsupported reward mode: {reward_mode}")
 

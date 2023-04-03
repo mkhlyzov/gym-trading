@@ -6,6 +6,9 @@ import pandas as pd
 
 from .base_env import BaseTradingEnv, Position
 
+# Skip episode if it contains too many (%) NaN values (df["close"])
+NAN_PCT_TOLERANCE: float = 0.25
+
 
 class TradingEnv3(BaseTradingEnv):
     """
@@ -144,7 +147,7 @@ class TradingEnv3(BaseTradingEnv):
         p_hist = self.df["close"][
             start_idx - self.df["step"][start_idx] * self.window_size : start_idx
         ]
-        if (p_hist == p_hist.shift(1)).mean() > 0.5:
+        if (p_hist == p_hist.shift(1)).mean() > NAN_PCT_TOLERANCE:
             # too many missing values in recent history hence step is compromised
             return self.reset()
 
@@ -161,7 +164,7 @@ class TradingEnv3(BaseTradingEnv):
         )
 
         self.prices = self.df["close"][self._indices]
-        if (self.prices.shift(1) == self.prices).mean() > 0.3:
+        if (self.prices.shift(1) == self.prices).mean() > NAN_PCT_TOLERANCE:
             # unlucky guess with too many missing values for the episode
             return self.reset()
 
