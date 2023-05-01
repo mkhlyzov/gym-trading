@@ -1,10 +1,12 @@
 import random
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, SupportsFloat, Tuple
+
+import gymnasium
 
 from gym_trading.envs.base_env import BaseTradingEnv
 
 
-class MixedEnv:
+class MixedEnv(gymnasium.Env):
     """
     Wrapper that manages multiple gym_tarding environments.
     """
@@ -15,6 +17,15 @@ class MixedEnv:
     def reset(self, **kwargs) -> Tuple[Any, Dict]:
         self.current_env = random.choice(self.envs)
         return self.current_env.reset(**kwargs)
+    
+    def step(self, action: Any) -> Tuple[Any, SupportsFloat, bool, bool, Dict[str, Any]]:
+        return self.current_env.step(action)
+    
+    def close(self) -> None:
+        return self.current_env.close()
+
+    def render(self) -> None:
+        return self.current_env.render()
     
     def __getattr__(self, __name: str) -> Any:
         if hasattr(self.current_env, __name):
