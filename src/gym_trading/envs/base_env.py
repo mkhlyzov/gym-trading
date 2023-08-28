@@ -111,7 +111,7 @@ class BaseTradingEnv(gymnasium.Env):
                 except ValueError:
                     pass
         if df.index.freq is None:
-            df = df.resample((df.index[1:] - df.index[:-1]).min()).last() # filling up missing rows
+            df = df.resample((df.index[1:] - df.index[:-1]).median()).last() # filling up missing rows
         self.df = df
 
     def _setup_reward(self, reward_mode: str) -> None:
