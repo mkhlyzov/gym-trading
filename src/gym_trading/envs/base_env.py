@@ -1,3 +1,4 @@
+import datetime
 from enum import Enum
 from typing import Any, Callable, Dict, List, Tuple
 
@@ -63,26 +64,14 @@ class BaseTradingEnv(gymnasium.Env):
         reward_mode: str = "step",
         **kwargs,
     ) -> None:
-        self.df = df
+        self._setup_dataframe(df)
+        self._setup_reward(reward_mode)
+
         self.max_episode_steps = max_episode_steps
         self.window_size = window_size
         self._comission_fee = comission_fee
 
-        if reward_mode == "step":
-            self._calculate_reward = self._calculate_reward_per_step
-        elif reward_mode == "trade":
-            self._calculate_reward = self._calculate_reward_per_trade
-        elif reward_mode.startswith("mixed"):
-            alpha = (
-                0.1
-                if len(reward_mode.split("_")) == 1
-                else float(reward_mode.split("_")[-1])
-            )
-            self._calculate_reward = lambda: self._calculate_reward_mixed(alpha)
-        else:
-            raise ValueError(f"Unsupported reward mode: {reward_mode}")
-
-        self.reset()
+        self.reset()  # required for self._get_observation() call to work properly
 
         # spaces
         self.action_space = gymnasium.spaces.Discrete(len(Position))
@@ -101,6 +90,44 @@ class BaseTradingEnv(gymnasium.Env):
                 "time_left": gymnasium.spaces.Box(0, np.inf, shape=(1,), dtype=float),
             }
         )
+
+    def _setup_dataframe(self, df: pd.DataFrame) -> None:
+        """
+        Method standartises DataFrame format.
+        All column names get changed to lower cass and DF gets indexed by
+        datetime64[ns] if possible.
+        """
+        df = df.rename(columns=lambda x: x.lower())
+
+        if not df.index.dtype == 'datetime64[ns]':
+            for column in df.columns:
+                try:
+                    # Try converting the column to datetime
+                    converted = pd.to_datetime(df[column], errors='raise', unit='s')
+                    if all((converted >= datetime.datetime(1971, 1, 1)) & (converted <= datetime.datetime.now())):
+                        df[column] = converted
+                        df.set_index(column, inplace=True)
+                        break  # Stop if successful
+                except ValueError:
+                    pass
+        if df.index.freq is None:
+            df = df.resample((df.index[1:] - df.index[:-1]).min()).last() # filling up missing rows
+        self.df = df
+
+    def _setup_reward(self, reward_mode: str) -> None:
+        if reward_mode == "step":
+            self._calculate_reward = self._calculate_reward_per_step
+        elif reward_mode == "trade":
+            self._calculate_reward = self._calculate_reward_per_trade
+        elif reward_mode.startswith("mixed"):
+            alpha = (
+                0.1
+                if len(reward_mode.split("_")) == 1
+                else float(reward_mode.split("_")[-1])
+            )
+            self._calculate_reward = lambda: self._calculate_reward_mixed(alpha)
+        else:
+            raise ValueError(f"Unsupported reward mode: {reward_mode}")
 
     def _get_features(self) -> np.ndarray:
         raise NotImplementedError("Derived class has to implement this method")

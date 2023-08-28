@@ -39,7 +39,8 @@ class TradingEnv3(BaseTradingEnv):
         scale: int = None,
         reward_mode: str = "step",
     ) -> None:
-        self.df = self._set_scaling_step(df, std_threshold, window_size, scale)
+        self._setup_dataframe(df)
+        self.df = self._set_scaling_step(self.df, std_threshold, window_size, scale)
         self.max_episode_steps = max_episode_steps
         self.window_size = window_size
 
@@ -55,7 +56,6 @@ class TradingEnv3(BaseTradingEnv):
     def _set_scaling_step(
         self, df: pd.DataFrame, std_threshold: float, window_size: int, scale: int
     ) -> pd.DataFrame:
-        df = df.resample("1T").last()
         df = df.fillna(method="ffill")
         df["step"] = scale
         if scale is not None:

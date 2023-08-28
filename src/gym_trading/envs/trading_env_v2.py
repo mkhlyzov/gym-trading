@@ -17,7 +17,7 @@ class TradingEnv2(BaseTradingEnv):
     df - expected to be indexed by pd.DatetimeIndex
     """
 
-    _std_window: str     # Window for calculating volatility on episode start
+    _std_window: str  # Window for calculating volatility on episode start
     _std_threshold: float
 
     def __init__(
@@ -32,15 +32,19 @@ class TradingEnv2(BaseTradingEnv):
         std_window: str = "7D",
         reward_mode: str = "step",
     ) -> None:
-        df = df.resample((df.index[1:] - df.index[:-1]).min()).last()
         self._std_threshold = std_threshold
         self._std_window = std_window
-        self._process_data = process_data if process_data is not None \
+        self._process_data = (
+            process_data
+            if process_data is not None
             else lambda x: self.default_preprocessor(x, window_size, std_threshold)
-        
+        )
         super().__init__(
-            df=df, max_episode_steps=max_episode_steps, window_size=window_size,
-            comission_fee=comission_fee, reward_mode=reward_mode
+            df=df,
+            max_episode_steps=max_episode_steps,
+            window_size=window_size,
+            comission_fee=comission_fee,
+            reward_mode=reward_mode,
         )
 
     @staticmethod
@@ -58,50 +62,75 @@ class TradingEnv2(BaseTradingEnv):
         # ).fillna(0).values
 
         return price, features / std
-    
+
     def _get_features(self) -> np.ndarray:
         return self.signal_features[self._current_tick]
-    
+
     def reset(self, idx_start=None, **kwargs) -> Tuple[Any, Dict]:
         super(BaseTradingEnv, self).reset(**kwargs)
 
         idx1 = self.df.index[0] + pd.Timedelta(self._std_window)
-        idx2 = self.df.index[-1] - pd.Timedelta("14D")  #=========================HARDCODED=VALUE===========
+        idx2 = self.df.index[-1] - pd.Timedelta(
+            "14D"
+        )  # =========================HARDCODED=VALUE===========
 
-        start_idx = pd.Timestamp(idx_start) if idx_start is not None else \
-            self.df[idx1:idx2].index[np.random.randint(len(self.df[idx1:idx2].index))]
+        start_idx = (
+            pd.Timestamp(idx_start)
+            if idx_start is not None
+            else self.df[idx1:idx2].index[
+                np.random.randint(len(self.df[idx1:idx2].index))
+            ]
+        )
 
-        p = self.df.close[start_idx - pd.Timedelta(self._std_window):start_idx]
-        dp = (p.shift(1) - p)/  (p.shift(1) + p)
+        p = self.df.close[start_idx - pd.Timedelta(self._std_window) : start_idx]
+        dp = (p.shift(1) - p) / (p.shift(1) + p)
         if dp.isna().mean() > 0.5:
             if idx_start is not None:
                 raise RuntimeError("Too many NaN values, can't determine optimal scale")
             return self.reset()
         std = dp.std()
-        scale = int(max(np.rint((self._std_threshold / std)**2), 1)) # Number of candles to  combine
+        scale = int(
+            max(np.rint((self._std_threshold / std) ** 2), 1)
+        )  # Number of candles to  combine
         step = self.df.index[-1] - self.df.index[-2]
 
-        episode_duration = pd.Timedelta(self.max_episode_steps) if isinstance(self.max_episode_steps, str) \
+        episode_duration = (
+            pd.Timedelta(self.max_episode_steps)
+            if isinstance(self.max_episode_steps, str)
             else self.max_episode_steps * scale * step
+        )
         end_idx = start_idx + episode_duration
-        end_idx = min(end_idx, self.df.index[-1]) # in case idx2 estimation was bad
+        end_idx = min(end_idx, self.df.index[-1])  # in case idx2 estimation was bad
 
         resampling_func = dict(
-            open = "first",
-            close = "last",
-            high = "max",
-            low = "min",
-            volume = "sum",
+            open="first",
+            close="last",
+            high="max",
+            low="min",
+            volume="sum",
         )
-        resampling_func = {c: resampling_func[c] for c in self.df.columns}
+        resampling_func = {
+            c: resampling_func.get(c)
+            if c in resampling_func
+            else ("sum" if "volume" in c.lower() else "first")
+            for c in self.df.columns
+        }
 
-        df = self.df[
-            start_idx - pd.Timedelta(self._std_window):end_idx + step * scale * 2
-        ].resample(step * scale, offset=0).aggregate(resampling_func)
+        df = (
+            self.df[
+                start_idx - pd.Timedelta(self._std_window) : end_idx + step * scale * 2
+            ]
+            .resample(step * scale, offset=0)
+            .aggregate(resampling_func)
+        )
         offset = (df[start_idx:].index - start_idx)[0]
-        df = self.df[
-            start_idx - pd.Timedelta(self._std_window):end_idx + step * scale * 2
-        ].resample(step * scale, offset=-offset).aggregate(resampling_func)
+        df = (
+            self.df[
+                start_idx - pd.Timedelta(self._std_window) : end_idx + step * scale * 2
+            ]
+            .resample(step * scale, offset=-offset)
+            .aggregate(resampling_func)
+        )
 
         if df.close[start_idx:end_idx].isna().mean() > 0.3:
             # unlucky guess with too many missing values for the episode
@@ -117,8 +146,8 @@ class TradingEnv2(BaseTradingEnv):
         self._position = Position.FLAT
         self._old_position = None
         self._position_history = []
-        self._total_reward = 0.
-        self._total_profit = 1.
+        self._total_reward = 0.0
+        self._total_profit = 1.0
 
         return self._get_observation(), {}
 
