@@ -137,7 +137,7 @@ class BaseTradingEnv(gymnasium.Env):
         if self._position != Position.FLAT:
             # applying np.log to make symmetrical, np.arctan to make it bounded
             price_change = np.log(
-                self.prices[self._current_tick] / self.prices[self._last_trade_tick]
+                self.prices.iloc[self._current_tick] / self.prices.iloc[self._last_trade_tick]
             )
             price_change = np.arctan(price_change * 100)
         position = self._position.value - 1
@@ -152,8 +152,8 @@ class BaseTradingEnv(gymnasium.Env):
         }
 
     def _calculate_reward_per_step(self) -> float:
-        new_price = self.prices[self._current_tick]
-        old_price = self.prices[self._current_tick - 1]
+        new_price = self.prices.iloc[self._current_tick]
+        old_price = self.prices.iloc[self._current_tick - 1]
         new_pos = self._position.value
         old_pos = self._old_position.value
 
@@ -170,8 +170,8 @@ class BaseTradingEnv(gymnasium.Env):
         return r_step * alpha + r_trade * (1 - alpha)
 
     def _update_profit_on_deal_close(self) -> None:
-        current_price = self.prices[self._current_tick]
-        last_trade_price = self.prices[self._last_trade_tick]
+        current_price = self.prices.iloc[self._current_tick]
+        last_trade_price = self.prices.iloc[self._last_trade_tick]
 
         if self._position == Position.LONG:
             # Closing LONG position
@@ -215,18 +215,18 @@ class BaseTradingEnv(gymnasium.Env):
 
     def get_optimal_action(self) -> Position:
         s = np.sign(
-            self.prices[self._current_tick + 1] - self.prices[self._current_tick]
+            self.prices.iloc[self._current_tick + 1] - self.prices.iloc[self._current_tick]
         )
         if s == 0:
             return self._position
 
         threshold = (1 + self._comission_fee) / (1 - self._comission_fee)
-        p_ = self.prices[self._current_tick]
+        p_ = self.prices.iloc[self._current_tick]
         j = self._current_tick + 1
         while j <= self._end_tick:
-            p_ = s * max(s * p_, s * self.prices[j])
-            delta_p = (p_ / self.prices[self._current_tick]) ** s
-            drawback = (p_ / self.prices[j]) ** s
+            p_ = s * max(s * p_, s * self.prices.iloc[j])
+            delta_p = (p_ / self.prices.iloc[self._current_tick]) ** s
+            drawback = (p_ / self.prices.iloc[j]) ** s
             if drawback > threshold or drawback > delta_p:
                 break
             j += 1
@@ -241,19 +241,19 @@ class BaseTradingEnv(gymnasium.Env):
         i = self._start_tick
 
         while i < self._end_tick:
-            s = np.sign(self.prices[i + 1] - self.prices[i])
+            s = np.sign(self.prices.iloc[i + 1] - self.prices.iloc[i])
             if s == 0:
                 i += 1
                 continue
-            p_ = self.prices[i]
+            p_ = self.prices.iloc[i]
             idx_extremum = i
             j = i + 1
             while j <= self._end_tick:
-                p_ = s * max(s * p_, s * self.prices[j])
-                if np.isclose(self.prices[j], p_):
+                p_ = s * max(s * p_, s * self.prices.iloc[j])
+                if np.isclose(self.prices.iloc[j], p_):
                     idx_extremum = j
-                delta_p = (p_ / self.prices[i]) ** s
-                drawback = (p_ / self.prices[j]) ** s
+                delta_p = (p_ / self.prices.iloc[i]) ** s
+                drawback = (p_ / self.prices.iloc[j]) ** s
                 if drawback > threshold or drawback > delta_p:
                     break
                 j += 1

@@ -56,7 +56,7 @@ class TradingEnv3(BaseTradingEnv):
     def _set_scaling_step(
         self, df: pd.DataFrame, std_threshold: float, window_size: int, scale: int
     ) -> pd.DataFrame:
-        df = df.fillna(method="ffill")
+        df = df.ffill()     # equivalent of deprecated df.fillna(method="ffill")
         df["step"] = scale
         if scale is not None:
             return df
@@ -128,7 +128,7 @@ class TradingEnv3(BaseTradingEnv):
 
     def _get_features(self) -> np.ndarray:
         current_idx = self._indices[self._current_tick]
-        scale = self.df["step"][current_idx]
+        scale = self.df["step"].iloc[current_idx]
         indices = np.arange(-self.window_size, 1) * scale + current_idx
         close = self.df["close"].values[indices]
         dp = (close[1:] - close[:-1]) / (close[1:] + close[:-1])
@@ -145,7 +145,7 @@ class TradingEnv3(BaseTradingEnv):
             else np.random.randint(self._idx1, self._idx2)
         )
         p_hist = self.df["close"][
-            start_idx - self.df["step"][start_idx] * self.window_size : start_idx
+            start_idx - self.df["step"].iloc[start_idx] * self.window_size : start_idx
         ]
         if (p_hist == p_hist.shift(1)).mean() > NAN_PCT_TOLERANCE:
             # too many missing values in recent history hence step is compromised
@@ -163,7 +163,7 @@ class TradingEnv3(BaseTradingEnv):
             )
         )
 
-        self.prices = self.df["close"][self._indices]
+        self.prices = self.df["close"].iloc[self._indices]
         if (self.prices.shift(1) == self.prices).mean() > NAN_PCT_TOLERANCE:
             # unlucky guess with too many missing values for the episode
             return self.reset()

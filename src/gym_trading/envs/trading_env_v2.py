@@ -52,7 +52,7 @@ class TradingEnv2(BaseTradingEnv):
         df: pd.DataFrame, window: int, std: float
     ) -> Tuple[pd.Series, np.ndarray]:
         mask = range(window)
-        price = df.close.fillna(method="ffill")
+        price = df.close.ffill()    # equivalent of df.close.fillna(method="ffill")
 
         dp = (price - price.shift(1)) / (price + price.shift(1))
         features = pd.concat([dp.shift(i) for i in mask], axis=1).fillna(0).values
