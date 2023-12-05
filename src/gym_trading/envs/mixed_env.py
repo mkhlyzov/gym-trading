@@ -22,7 +22,8 @@ class MixedEnv(gymnasium.Env):
         return self.current_env.step(action)
     
     def close(self) -> None:
-        return self.current_env.close()
+        for env in self.envs:
+            env.close()
 
     def render(self) -> None:
         return self.current_env.render()
