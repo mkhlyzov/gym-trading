@@ -214,6 +214,8 @@ class BaseTradingEnv(gymnasium.Env):
         pass
 
     def get_optimal_action(self) -> Position:
+        if self._current_tick + 1 >= self._end_tick:
+            return Position(1)
         s = np.sign(
             self.prices.iloc[self._current_tick + 1] - self.prices.iloc[self._current_tick]
         )
@@ -222,8 +224,9 @@ class BaseTradingEnv(gymnasium.Env):
 
         threshold = (1 + self._comission_fee) / (1 - self._comission_fee)
         p_ = self.prices.iloc[self._current_tick]
+        delta_p = 1.
         j = self._current_tick + 1
-        while j <= self._end_tick:
+        while j < self._end_tick:
             p_ = s * max(s * p_, s * self.prices.iloc[j])
             delta_p = (p_ / self.prices.iloc[self._current_tick]) ** s
             drawback = (p_ / self.prices.iloc[j]) ** s
@@ -246,9 +249,10 @@ class BaseTradingEnv(gymnasium.Env):
                 i += 1
                 continue
             p_ = self.prices.iloc[i]
+            delta_p = 1.
             idx_extremum = i
             j = i + 1
-            while j <= self._end_tick:
+            while j < self._end_tick:
                 p_ = s * max(s * p_, s * self.prices.iloc[j])
                 if np.isclose(self.prices.iloc[j], p_):
                     idx_extremum = j
