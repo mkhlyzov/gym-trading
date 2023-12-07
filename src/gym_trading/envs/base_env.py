@@ -100,30 +100,36 @@ class BaseTradingEnv(gymnasium.Env):
         """
         df = df.rename(columns=lambda x: x.lower())
 
-        if not df.index.dtype == 'datetime64[ns]':
+        if not df.index.dtype == "datetime64[ns]":
             for column in df.columns:
                 try:
                     # Try converting the column to datetime
-                    converted = pd.to_datetime(df[column], errors='raise', unit='s')
-                    if all((converted >= datetime.datetime(1971, 1, 1)) & (converted <= datetime.datetime.now())):
+                    converted = pd.to_datetime(df[column], errors="raise", unit="s")
+                    if all(
+                        (converted >= datetime.datetime(1971, 1, 1))
+                        & (converted <= datetime.datetime.now())
+                    ):
                         df[column] = converted
                         df.set_index(column, inplace=True)
                         break  # Stop if successful
                 except ValueError:
                     pass
         if df.index.freq is None:
-            df = df.resample((df.index[1:] - df.index[:-1]).median()).last() # filling up missing rows
+            df = df.resample(
+                (df.index[1:] - df.index[:-1]).median()
+            ).last()  # filling up missing rows
         self.df = df
 
     def _get_features(self) -> np.ndarray:
         raise NotImplementedError("Derived class has to implement this method")
-    
+
     def _get_observation(self) -> Dict[str, Any]:
         price_change = 0
         if self._position != Position.FLAT:
             # applying np.log to make symmetrical, np.arctan to make it bounded
             price_change = np.log(
-                self.prices.iloc[self._current_tick] / self.prices.iloc[self._last_trade_tick]
+                self.prices.iloc[self._current_tick]
+                / self.prices.iloc[self._last_trade_tick]
             )
             price_change = np.arctan(price_change * 100)
         position = self._position.value - 1
@@ -136,7 +142,7 @@ class BaseTradingEnv(gymnasium.Env):
             "position": np.array([position], dtype=float),
             "time_left": np.array([time_left], dtype=float),
         }
-    
+
     def _setup_reward(self, reward_mode: str) -> None:
         if reward_mode == "step":
             self._calculate_reward = self._calculate_reward_per_step
@@ -163,7 +169,7 @@ class BaseTradingEnv(gymnasium.Env):
         reward = np.log(new_price / old_price) * (new_pos - 1)
         reward -= self._comission_fee * abs(new_pos - old_pos)
         return reward
-    
+
     def _calculate_reward_per_trade(self) -> float:
         return np.log(self._total_profit / self._old_profit)
 
@@ -171,7 +177,7 @@ class BaseTradingEnv(gymnasium.Env):
         r_step = self._calculate_reward_per_step()
         r_trade = self._calculate_reward_per_trade()
         return r_step * alpha + r_trade * (1 - alpha)
-    
+
     def _calculate_raward_optimal_action(self) -> float:
         action_taken = self._position.value
 
@@ -179,7 +185,7 @@ class BaseTradingEnv(gymnasium.Env):
         optimal_action = self.get_optimal_action().value
         self._current_tick += 1
 
-        reward = 1. - abs(action_taken - optimal_action)
+        reward = 1.0 - abs(action_taken - optimal_action)
         return reward
 
     def _update_profit_on_deal_close(self) -> None:
@@ -239,14 +245,14 @@ class BaseTradingEnv(gymnasium.Env):
         returns (next_trading_point_idx, delta_p, price_change_direction[-1, 0, 1])
         """
         if len(prices) < 2:
-            return 1, 1., 0
+            return 1, 1.0, 0
 
         s = np.sign(prices[1] - prices[0])
         if s == 0:
-            return 1, 1., 0
+            return 1, 1.0, 0
 
         p_ = prices[0]
-        delta_p = 1.
+        delta_p = 1.0
         j = 1
         idx_extremum = j
         while j < len(prices):
@@ -258,61 +264,76 @@ class BaseTradingEnv(gymnasium.Env):
             if drawback > min_profit or drawback > delta_p:
                 break
             j += 1
-        
+
         return idx_extremum, delta_p, s
 
-    def get_optimal_action(self, comission_fee: float=None) -> Position:
+    def get_optimal_action(self, comission_fee: float = None) -> Position:
         if comission_fee is None:
             comission_fee = self._comission_fee
         if self._current_tick + 1 >= self._end_tick:
             return Position(1)
         threshold = (1 + comission_fee) / (1 - comission_fee)
         _, delta_p, s = self._find_next_best_price(
-            self.prices.to_numpy()[self._current_tick : self._end_tick], threshold)
+            self.prices.to_numpy()[self._current_tick : self._end_tick], threshold
+        )
         if delta_p <= threshold:
             return self._position
         return Position(1 + s)
-    
+
     def get_max_profit(self) -> float:
         threshold = (1 + self._comission_fee) / (1 - self._comission_fee)
-        profit = 1.
+        profit = 1.0
         i = self._start_tick
 
         while i < self._end_tick:
             j, delta_p, _ = self._find_next_best_price(
-                self.prices.to_numpy()[i : self._end_tick], threshold)
+                self.prices.to_numpy()[i : self._end_tick], threshold
+            )
             i += j
 
             if delta_p >= threshold:
-                profit *= (delta_p / threshold)
+                profit *= delta_p / threshold
 
         return profit
+
+    def get_buy_and_hold(self) -> float:
+        buy_and_hold = (
+            self.prices.iloc[self._end_tick - 1] / self.prices.iloc[self._start_tick]
+        )
+        if buy_and_hold < 1:
+            buy_and_hold = 1 / buy_and_hold
+        return buy_and_hold
 
     def render(self) -> None:
         plt.style.use("seaborn")
         plt.figure(figsize=(25, 10), dpi=200)
 
-        index = self.prices.index[self._start_tick: self._end_tick]
-        df = pd.DataFrame(dict(
-            price=self.prices[index[:len(self._position_history)]],
-            position=self._position_history,
-        ))
+        index = self.prices.index[self._start_tick : self._end_tick]
+        df = pd.DataFrame(
+            dict(
+                price=self.prices[index[: len(self._position_history)]],
+                position=self._position_history,
+            )
+        )
 
         plt.plot(self.prices[index], "b", alpha=0.3)
         plt.plot(self.prices[index], "b.", alpha=0.3)
         plt.plot(df.price[df.position == Position.SHORT], "ro", alpha=0.9)
         plt.plot(df.price[df.position == Position.LONG], "go", alpha=0.9)
 
-        info = f"total profit: {self._total_profit:.3f};    " +\
-            f"idx_start: {self.prices.index[self._start_tick]};   " +\
-            f"max possible profit: {self.get_max_profit():.3f};   "
+        info = (
+            f"total profit: {self._total_profit:.3f};    "
+            + f"max possible profit: {self.get_max_profit():.3f};   "
+            + f"B&H: {self.get_buy_and_hold():.3f};   "
+        )
         if self.prices.index.freq is not None:
             info += f"scale: {self.prices.index.freq};"
+        info += "\n"
         if isinstance(index, pd.DatetimeIndex):
-            info += f"\nepisode duration: {index[-1] - index[0]}"
+            info += f"episode duration: {index[-1] - index[0]}   "
+        info += f"idx_start: {self.prices.index[self._start_tick]};"
         plt.title(info, fontsize=20)
         plt.xlabel("datetime")
         plt.ylabel("Price")
 
         plt.show()
-        
