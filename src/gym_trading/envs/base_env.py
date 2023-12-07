@@ -3,6 +3,7 @@ from enum import Enum
 from typing import Any, Callable, Dict, List, Tuple
 
 import gymnasium
+import numba
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
@@ -114,23 +115,6 @@ class BaseTradingEnv(gymnasium.Env):
             df = df.resample((df.index[1:] - df.index[:-1]).median()).last() # filling up missing rows
         self.df = df
 
-    def _setup_reward(self, reward_mode: str) -> None:
-        if reward_mode == "step":
-            self._calculate_reward = self._calculate_reward_per_step
-        elif reward_mode == "trade":
-            self._calculate_reward = self._calculate_reward_per_trade
-        elif reward_mode.startswith("mixed"):
-            alpha = (
-                0.1
-                if len(reward_mode.split("_")) == 1
-                else float(reward_mode.split("_")[-1])
-            )
-            self._calculate_reward = lambda: self._calculate_reward_mixed(alpha)
-        elif reward_mode == "optimal_action":
-            self._calculate_reward = self._calculate_raward_optimal_action
-        else:
-            raise ValueError(f"Unsupported reward mode: {reward_mode}")
-
     def _get_features(self) -> np.ndarray:
         raise NotImplementedError("Derived class has to implement this method")
     
@@ -152,6 +136,23 @@ class BaseTradingEnv(gymnasium.Env):
             "position": np.array([position], dtype=float),
             "time_left": np.array([time_left], dtype=float),
         }
+    
+    def _setup_reward(self, reward_mode: str) -> None:
+        if reward_mode == "step":
+            self._calculate_reward = self._calculate_reward_per_step
+        elif reward_mode == "trade":
+            self._calculate_reward = self._calculate_reward_per_trade
+        elif reward_mode.startswith("mixed"):
+            alpha = (
+                0.1
+                if len(reward_mode.split("_")) == 1
+                else float(reward_mode.split("_")[-1])
+            )
+            self._calculate_reward = lambda: self._calculate_reward_mixed(alpha)
+        elif reward_mode == "optimal_action":
+            self._calculate_reward = self._calculate_raward_optimal_action
+        else:
+            raise ValueError(f"Unsupported reward mode: {reward_mode}")
 
     def _calculate_reward_per_step(self) -> float:
         new_price = self.prices.iloc[self._current_tick]
@@ -225,28 +226,50 @@ class BaseTradingEnv(gymnasium.Env):
     def close(self) -> None:
         pass
 
-    def get_optimal_action(self) -> Position:
-        if self._current_tick + 1 >= self._end_tick:
-            return Position(1)
-        s = np.sign(
-            self.prices.iloc[self._current_tick + 1] - self.prices.iloc[self._current_tick]
-        )
-        if s == 0:
-            return self._position
+    @staticmethod
+    @numba.jit(nopython=True)
+    def _find_next_best_price(
+        prices: np.ndarray, min_profit: float
+    ) -> Tuple[int, float, int]:
+        """
+        prices: numpy array of prices
+        min_profit: minimal trade profit (before comission).
+                    min_profit = 1.01 corresponds to 1% price change
 
-        threshold = (1 + self._comission_fee) / (1 - self._comission_fee)
-        p_ = self.prices.iloc[self._current_tick]
+        returns (next_trading_point_idx, delta_p, price_change_direction[-1, 0, 1])
+        """
+        if len(prices) < 2:
+            return 1, 1., 0
+
+        s = np.sign(prices[1] - prices[0])
+        if s == 0:
+            return 1, 1., 0
+
+        p_ = prices[0]
         delta_p = 1.
-        j = self._current_tick + 1
-        while j < self._end_tick:
-            p_ = s * max(s * p_, s * self.prices.iloc[j])
-            delta_p = (p_ / self.prices.iloc[self._current_tick]) ** s
-            drawback = (p_ / self.prices.iloc[j]) ** s
-            if drawback > threshold or drawback > delta_p:
+        j = 1
+        idx_extremum = j
+        while j < len(prices):
+            p_ = s * max(s * p_, s * prices[j])
+            if np.isclose(prices[j], p_):
+                idx_extremum = j
+            delta_p = (p_ / prices[0]) ** s
+            drawback = (p_ / prices[j]) ** s
+            if drawback > min_profit or drawback > delta_p:
                 break
             j += 1
+        
+        return idx_extremum, delta_p, s
 
-        if delta_p < threshold:
+    def get_optimal_action(self, comission_fee: float=None) -> Position:
+        if comission_fee is None:
+            comission_fee = self._comission_fee
+        if self._current_tick + 1 >= self._end_tick:
+            return Position(1)
+        threshold = (1 + comission_fee) / (1 - comission_fee)
+        _, delta_p, s = self._find_next_best_price(
+            self.prices.to_numpy()[self._current_tick : self._end_tick], threshold)
+        if delta_p <= threshold:
             return self._position
         return Position(1 + s)
     
@@ -256,30 +279,12 @@ class BaseTradingEnv(gymnasium.Env):
         i = self._start_tick
 
         while i < self._end_tick:
-            if i + 1 >= self._end_tick:
-                break
-            s = np.sign(self.prices.iloc[i + 1] - self.prices.iloc[i])
-            if s == 0:
-                i += 1
-                continue
-            p_ = self.prices.iloc[i]
-            delta_p = 1.
-            idx_extremum = i
-            j = i + 1
-            while j < self._end_tick:
-                p_ = s * max(s * p_, s * self.prices.iloc[j])
-                if np.isclose(self.prices.iloc[j], p_):
-                    idx_extremum = j
-                delta_p = (p_ / self.prices.iloc[i]) ** s
-                drawback = (p_ / self.prices.iloc[j]) ** s
-                if drawback > threshold or drawback > delta_p:
-                    break
-                j += 1
+            j, delta_p, _ = self._find_next_best_price(
+                self.prices.to_numpy()[i : self._end_tick], threshold)
+            i += j
 
             if delta_p >= threshold:
                 profit *= (delta_p / threshold)
-
-            i = idx_extremum
 
         return profit
 
