@@ -105,6 +105,7 @@ class BaseTradingEnv(gymnasium.Env):
             if df[column].dtype == 'float64':
                 df[column] = df[column].astype('float32')
 
+            
         if not df.index.dtype == "datetime64[ns]":
             for column in df.columns:
                 try:
@@ -123,6 +124,8 @@ class BaseTradingEnv(gymnasium.Env):
             df = df.resample(
                 (df.index[1:] - df.index[:-1]).median()
             ).last()  # filling up missing rows
+
+        df = df.ffill()     # equivalent of deprecated df.fillna(method="ffill")
         self.df = df
 
     def _get_features(self) -> np.ndarray:
