@@ -54,7 +54,8 @@ class TradingEnv2(BaseTradingEnv):
         mask = range(window)
         price = df.close.ffill()    # equivalent of df.close.fillna(method="ffill")
 
-        dp = (price - price.shift(1)) / (price + price.shift(1))
+        # dp = (price - price.shift(1)) / (price + price.shift(1))
+        dp = np.log(price / price.shift(1))
         features = pd.concat([dp.shift(i) for i in mask], axis=1).fillna(0).values
 
         # features = pd.concat(
@@ -148,6 +149,8 @@ class TradingEnv2(BaseTradingEnv):
         self._position_history = []
         self._total_reward = 0.0
         self._total_profit = 1.0
+
+        self._map_optimal_actions()
 
         return self._get_observation(), {}
 

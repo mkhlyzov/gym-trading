@@ -68,11 +68,12 @@ class TradingEnv3(BaseTradingEnv):
             window_sizes[window_sizes <= 0] = 0
             return window_sizes
 
-        dp = (df["close"] - df["close"].shift(1)) / (df["close"] + df["close"].shift(1))
+        # dp = (df["close"] - df["close"].shift(1)) / (df["close"] + df["close"].shift(1))
+        dp = np.log(df["close"] / df["close"].shift(1))
         steps = (
             find_window_sizes(dp**2, window_size * std_threshold**2) / window_size
         )
-        df["step"] = np.rint(steps).astype(int)
+        df["step"] = np.rint(steps).astype(np.int16)
         df["step"].replace(0, 1, inplace=True)
         return df
 
@@ -131,7 +132,8 @@ class TradingEnv3(BaseTradingEnv):
         scale = self.df["step"].iloc[current_idx]
         indices = np.arange(-self.window_size, 1) * scale + current_idx
         close = self.df["close"].values[indices]
-        dp = (close[1:] - close[:-1]) / (close[1:] + close[:-1])
+        # dp = (close[1:] - close[:-1]) / (close[1:] + close[:-1])
+        dp = np.log(close[1:] / close[:-1])
         return dp / self._std_threshold
 
     def reset(self, idx_start: Union[int, str] = None, **kwargs) -> Tuple[Any, Dict]:
@@ -178,6 +180,8 @@ class TradingEnv3(BaseTradingEnv):
         self._position_history = []
         self._total_reward = 0.0
         self._total_profit = 1.0
+
+        self._map_optimal_actions()
 
         return self._get_observation(), {}
 

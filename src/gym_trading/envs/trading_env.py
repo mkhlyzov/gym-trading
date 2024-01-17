@@ -22,7 +22,7 @@ class TradingEnv(BaseTradingEnv):
         process_data: Callable = None,
         reward_mode: str = "step",
     ) -> None:
-        self.df = df
+        self._setup_dataframe(df)
         self.window_size = window_size
 
         self.prices, self.signal_features = (
@@ -73,6 +73,8 @@ class TradingEnv(BaseTradingEnv):
         self._total_reward = 0
         self._total_profit = 1
         self._old_profit = None
+
+        self._map_optimal_actions()
 
         return self._get_observation(), {}
 

@@ -40,6 +40,7 @@ class BaseTradingEnv(gymnasium.Env):
 
     prices: pd.Series
     features: np.ndarray
+    optimal_states: np.ndarray
 
     _start_tick: int
     _end_tick: int
@@ -205,7 +206,7 @@ class BaseTradingEnv(gymnasium.Env):
             shares = self._total_profit / current_price
             self._total_profit = shares * last_trade_price
 
-    def step(self, action) -> Tuple[np.array, float, bool, bool, dict]:
+    def step(self, action) -> Tuple[np.ndarray, float, bool, bool, dict]:
         # obs, reward, terminated, truncated, info
         done = (self._current_tick + 1) >= self._end_tick
         next_position = Position(action) if not done else Position.FLAT
@@ -261,13 +262,44 @@ class BaseTradingEnv(gymnasium.Env):
                 idx_extremum = j
             delta_p = (p_ / prices[0]) ** s
             drawback = (p_ / prices[j]) ** s
-            if drawback > min_profit or drawback > delta_p:
+            # if drawback > min_profit or drawback > delta_p:
+            # if drawback - 1 > (delta_p - 1) / 3:
+            if drawback > delta_p or (delta_p > min_profit and drawback > min((delta_p - 1) * 0.33 + 1, min_profit)):
                 break
             j += 1
 
         return idx_extremum, delta_p, s
 
-    def get_optimal_action(self, comission_fee: float = None) -> Position:
+    def _map_optimal_actions(self, comission_fee: float = None) -> None:
+        """
+        Maps the optimal actions for each time step based on the commission fee.
+
+        Parameters:
+            comission_fee (float, optional): The commission fee applied to each trade. Defaults to None.
+
+        Returns:
+            None
+        """
+        if comission_fee is None: comission_fee = self._comission_fee
+        threshold = (1 + comission_fee) / (1 - comission_fee)
+        optimal_states = np.ones(self.max_episode_steps, dtype=np.int8)
+
+        i = i0 = self._start_tick
+        while i < self._end_tick:
+            idx_extremum, delta_p, s = self._find_next_best_price(
+                self.prices.to_numpy()[i : self._end_tick], threshold
+            )
+            if delta_p <= threshold:
+                s = 0
+            optimal_states[i - i0 : i - i0 + idx_extremum] = 1 + s
+            i += idx_extremum
+        self.optimal_states = optimal_states
+    
+    def _get_optimal_action_static(self) -> Position:
+        optimal_state = self.optimal_states[self._current_tick - self._start_tick]
+        return Position(optimal_state)
+    
+    def _get_optimal_action_dynamic(self, comission_fee: float = None) -> Position:
         if comission_fee is None:
             comission_fee = self._comission_fee
         if self._current_tick + 1 >= self._end_tick:
@@ -276,9 +308,16 @@ class BaseTradingEnv(gymnasium.Env):
         _, delta_p, s = self._find_next_best_price(
             self.prices.to_numpy()[self._current_tick : self._end_tick], threshold
         )
+        
         if delta_p <= threshold:
+            if (self._position.value - 1) * s > 0:
+                return self._position
+            return Position(1)
             return self._position
         return Position(1 + s)
+
+    def get_optimal_action(self, comission_fee: float = None) -> Position:
+        return self._get_optimal_action_static()
 
     def get_max_profit(self) -> float:
         threshold = (1 + self._comission_fee) / (1 - self._comission_fee)
@@ -302,10 +341,11 @@ class BaseTradingEnv(gymnasium.Env):
         )
         if buy_and_hold < 1:
             buy_and_hold = 1 / buy_and_hold
+        buy_and_hold *= (1 - self._comission_fee) / (1 + self._comission_fee)
         return buy_and_hold
 
     def render(self) -> None:
-        plt.style.use("seaborn")
+        plt.style.use("seaborn-v0_8")
         plt.figure(figsize=(25, 10), dpi=200)
 
         index = self.prices.index[self._start_tick : self._end_tick]
@@ -325,6 +365,7 @@ class BaseTradingEnv(gymnasium.Env):
             f"total profit: {self._total_profit:.3f};    "
             + f"max possible profit: {self.get_max_profit():.3f};   "
             + f"B&H: {self.get_buy_and_hold():.3f};   "
+            + f"fee: {self._comission_fee * 100}%;   "
         )
         if self.prices.index.freq is not None:
             info += f"scale: {self.prices.index.freq};"
