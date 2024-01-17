@@ -101,6 +101,10 @@ class BaseTradingEnv(gymnasium.Env):
         """
         df = df.rename(columns=lambda x: x.lower())
 
+        for column in df.columns:
+            if df[column].dtype == 'float64':
+                df[column] = df[column].astype('float32')
+
         if not df.index.dtype == "datetime64[ns]":
             for column in df.columns:
                 try:
