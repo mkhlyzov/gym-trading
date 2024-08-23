@@ -134,3 +134,15 @@ class TestBaseFunctionality:
             _, r, _, _, _ = env.step(action)
             assert numpy.sign(r) == numpy.sign(1 - action)
     
+    def test_optimal_actions_give_max_profit(self, instance: BaseTradingEnv) -> None:
+        env = instance(df=gym_trading.datasets.BITCOIN_USD_1H)
+
+        for _ in range(30):
+            env.comission_fee = numpy.random.uniform(0, 0.01)
+            env.reset()
+            done = False
+            while not done:
+                action = env.get_optimal_action()
+                _, _, term, trunc, _ = env.step(action)
+                done = (term or trunc)
+            assert numpy.isclose(env._total_profit, env.get_max_profit())
