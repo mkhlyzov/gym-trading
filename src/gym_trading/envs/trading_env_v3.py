@@ -1,3 +1,4 @@
+from numbers import Integral
 from typing import Any, Dict, Tuple, Union
 
 import numba
@@ -5,9 +6,6 @@ import numpy as np
 import pandas as pd
 
 from .base_env import BaseTradingEnv, Position
-
-# Skip episode if it contains too many (%) NaN values (df["close"])
-NAN_PCT_TOLERANCE: float = 0.25
 
 
 class TradingEnv3(BaseTradingEnv):
@@ -21,13 +19,6 @@ class TradingEnv3(BaseTradingEnv):
     same.
     """
 
-    # [_idx1, _idx2) represent a range of valid indexes to sample starting
-    # index from on a start of a new episode
-    _idx1: int
-    _idx2: int
-
-    _indices: np.ndarray
-
     def __init__(
         self,
         *,
@@ -36,15 +27,15 @@ class TradingEnv3(BaseTradingEnv):
         window_size: int = 20,
         comission_fee: float = 0.0010,
         std_threshold: float = 0.0040,
-        scale: int = None,
+        scale: int = -1,
         reward_mode: str = "step",
     ) -> None:
         self._setup_dataframe(df)
-        self.df = self._set_scaling_step(self.df, std_threshold, window_size, scale)
+        self._setup_scaling_step(std_threshold, window_size, scale)
         self.max_episode_steps = max_episode_steps
         self.window_size = window_size
 
-        self._idx1, self._idx2 = self._get_idx1_idx2()
+        self._setup_idx1_idx2()
         self._std_threshold = std_threshold
         self._scale = scale
 
@@ -53,13 +44,12 @@ class TradingEnv3(BaseTradingEnv):
             comission_fee=comission_fee, reward_mode=reward_mode
         )
 
-    def _set_scaling_step(
-        self, df: pd.DataFrame, std_threshold: float, window_size: int, scale: int
+    def _setup_scaling_step(
+        self, std_threshold: float, window_size: int, scale: int
     ) -> pd.DataFrame:
-        df = df.ffill()     # equivalent of deprecated df.fillna(method="ffill")
-        df["step"] = scale
-        if scale is not None:
-            return df
+        self.df["step"] = scale
+        if scale > 0:
+            return
 
         def find_window_sizes(sequence, C) -> np.ndarray:
             cumsum = np.cumsum(sequence)
@@ -68,16 +58,15 @@ class TradingEnv3(BaseTradingEnv):
             window_sizes[window_sizes <= 0] = 0
             return window_sizes
 
-        # dp = (df["close"] - df["close"].shift(1)) / (df["close"] + df["close"].shift(1))
-        dp = np.log(df["close"] / df["close"].shift(1))
+        price = self.df["close"].astype(np.float64)
+        dp = np.log(price / price.shift(1))
         steps = (
             find_window_sizes(dp**2, window_size * std_threshold**2) / window_size
         )
-        df["step"] = np.rint(steps).astype(np.int16)
-        df["step"].replace(0, 1, inplace=True)
-        return df
+        self.df["step"] = np.rint(steps).astype(np.int16)
+        self.df["step"] = self.df["step"].replace(0, 1)
 
-    def _get_idx1_idx2(
+    def _setup_idx1_idx2(
         self,
     ) -> Tuple[int, int]:
         min_indices = np.arange(len(self.df)) - self.df["step"] * self.window_size
@@ -96,7 +85,8 @@ class TradingEnv3(BaseTradingEnv):
         )
         idx2 = len(self.df) - np.max(indices)
 
-        return idx1, idx2
+        self._idx1 = idx1
+        self._idx2 = idx2
 
     @staticmethod
     @numba.jit(nopython=True)
@@ -128,7 +118,7 @@ class TradingEnv3(BaseTradingEnv):
         return np.array(indices)
 
     def _get_features(self) -> np.ndarray:
-        current_idx = self._indices[self._current_tick]
+        current_idx = self._indices[self._idx_now]
         scale = self.df["step"].iloc[current_idx]
         indices = np.arange(-self.window_size, 1) * scale + current_idx
         close = self.df["close"].values[indices]
@@ -141,7 +131,7 @@ class TradingEnv3(BaseTradingEnv):
 
         start_idx = (
             idx_start
-            if idx_start and isinstance(idx_start, int)
+            if idx_start and isinstance(idx_start, Integral)
             else self.df.index.get_loc(pd.Timestamp(idx_start))
             if isinstance(idx_start, str)
             else np.random.randint(self._idx1, self._idx2)
@@ -149,7 +139,7 @@ class TradingEnv3(BaseTradingEnv):
         p_hist = self.df["close"][
             start_idx - self.df["step"].iloc[start_idx] * self.window_size : start_idx
         ]
-        if (p_hist == p_hist.shift(1)).mean() > NAN_PCT_TOLERANCE:
+        if (p_hist == p_hist.shift(1)).mean() > self.NAN_PCT_TOLERANCE:
             # too many missing values in recent history hence step is compromised
             return self.reset()
 
@@ -165,25 +155,15 @@ class TradingEnv3(BaseTradingEnv):
             )
         )
 
-        self.prices = self.df["close"].iloc[self._indices]
-        if (self.prices.shift(1) == self.prices).mean() > NAN_PCT_TOLERANCE:
+        self.price = self.df["close"].iloc[self._indices]
+        if (self.price.shift(1) == self.price).mean() > self.NAN_PCT_TOLERANCE:
             # unlucky guess with too many missing values for the episode
             return self.reset()
 
-        self._start_tick = 0
-        self._end_tick = len(self._indices) - 1
-        self._current_tick = 0
-
-        self._last_trade_tick = None
-        self._position = Position.FLAT
-        self._old_position = None
-        self._position_history = []
-        self._total_reward = 0.0
-        self._total_profit = 1.0
-
-        self._map_optimal_actions()
-
-        return self._get_observation(), {}
+        self._idx_first = 0
+        self._idx_last = len(self._indices) - 1
+        
+        return super().reset()
 
 
 if __name__ == "__main__":

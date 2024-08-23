@@ -17,6 +17,8 @@ class TradingEnv2(BaseTradingEnv):
     df - expected to be indexed by pd.DatetimeIndex
     """
 
+    signal_features: pd.DataFrame
+
     _std_window: str  # Window for calculating volatility on episode start
     _std_threshold: float
 
@@ -65,7 +67,7 @@ class TradingEnv2(BaseTradingEnv):
         return price, features / std
 
     def _get_features(self) -> np.ndarray:
-        return self.signal_features[self._current_tick]
+        return self.signal_features[self._idx_now]
 
     def reset(self, idx_start=None, **kwargs) -> Tuple[Any, Dict]:
         super(BaseTradingEnv, self).reset(**kwargs)
@@ -137,22 +139,12 @@ class TradingEnv2(BaseTradingEnv):
             # unlucky guess with too many missing values for the episode
             return self.reset()
 
-        self.prices, self.signal_features = self._process_data(df)
+        self.price, self.signal_features = self._process_data(df)
 
-        self._start_tick = (self.prices.index < start_idx).sum()
-        self._end_tick = (self.prices.index < end_idx).sum()
-        self._current_tick = self._start_tick
-
-        self._last_trade_tick = None
-        self._position = Position.FLAT
-        self._old_position = None
-        self._position_history = []
-        self._total_reward = 0.0
-        self._total_profit = 1.0
-
-        self._map_optimal_actions()
-
-        return self._get_observation(), {}
+        self._idx_first = (self.price.index < start_idx).sum()
+        self._idx_last = (self.price.index < end_idx).sum()
+        
+        return super().reset()
 
 
 if __name__ == "__main__":

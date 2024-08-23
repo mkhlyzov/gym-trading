@@ -12,6 +12,8 @@ class TradingEnv(BaseTradingEnv):
     and allows you to trade on it
     """
 
+    signal_features: pd.DataFrame
+
     def __init__(
         self,
         *,
@@ -25,10 +27,10 @@ class TradingEnv(BaseTradingEnv):
         self._setup_dataframe(df)
         self.window_size = window_size
 
-        self.prices, self.signal_features = (
+        self.price, self.signal_features = (
             process_data(self) if process_data else self._process_data()
         )
-        if self.prices.shape[0] != self.signal_features.shape[0]:
+        if self.price.shape[0] != self.signal_features.shape[0]:
             raise ValueError("signal_features and prices have different shapes")
 
         super().__init__(
@@ -56,27 +58,17 @@ class TradingEnv(BaseTradingEnv):
         return prices, signal_features
 
     def _get_features(self) -> np.ndarray:
-        return self.signal_features[self._current_tick]
+        return self.signal_features[self._idx_now]
 
     def reset(self, idx_start=None, **kwargs) -> Tuple[Any, Dict]:
         super(BaseTradingEnv, self).reset(**kwargs)
 
-        self._start_tick = self.np_random.integers(
-            self.window_size, len(self.prices) - self.max_episode_steps
+        self._idx_first = self.np_random.integers(
+            self.window_size, len(self.price) - self.max_episode_steps
         ) if idx_start is None else idx_start
-        self._end_tick = self._start_tick + self.max_episode_steps
-        self._current_tick = self._start_tick
-        self._last_trade_tick = None
-        self._position = Position.FLAT
-        self._old_position = None
-        self._position_history = []
-        self._total_reward = 0
-        self._total_profit = 1
-        self._old_profit = None
+        self._idx_last = self._idx_first + self.max_episode_steps
 
-        self._map_optimal_actions()
-
-        return self._get_observation(), {}
+        return super().reset()
 
 
 if __name__ == '__main__':
@@ -90,7 +82,7 @@ if __name__ == '__main__':
         action_ = env.get_optimal_action()
         _, _, done_, _, _, = env.step(action_)
     print(env._total_profit)
-    print(env._start_tick)
+    print(env._idx_first)
     print(env._total_reward)
     # env.render()
         

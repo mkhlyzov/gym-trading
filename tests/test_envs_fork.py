@@ -106,7 +106,7 @@ class TestBaseFunctionality:
         env = instance(df=gym_trading.datasets.BITCOIN_USD_1H)
         env.reset()
         env.price.loc[env.price.index] = 1
-        env._comission_fee = 0.01
+        env.comission_fee = 0.01
         for i in range(env._idx_last - env._idx_first - 1):
             pos = env._position.value
             action = numpy.random.randint(3)
@@ -119,7 +119,7 @@ class TestBaseFunctionality:
         # price moves up ==> reward for Long is positive
         env.reset()
         env.price.loc[env.price.index] = numpy.arange(100, 100 + len(env.price))
-        env._comission_fee = 0.
+        env.comission_fee = 0.
         for i in range(env._idx_last - env._idx_first - 1):
             action = numpy.random.randint(3)
             _, r, _, _, _ = env.step(action)
@@ -128,7 +128,7 @@ class TestBaseFunctionality:
         # price moves down ==> reward for Short is positive
         env.reset()
         env.price.loc[env.price.index] = numpy.arange(100, 100 + len(env.price))[::-1]
-        env._comission_fee = 0.
+        env.comission_fee = 0.
         for i in range(env._idx_last - env._idx_first - 1):
             action = numpy.random.randint(3)
             _, r, _, _, _ = env.step(action)

@@ -107,9 +107,9 @@ class TestInnerLogic:
         env = TradingEnv(df=constant_price)
         env.reset()
         _, reward, *_ = env.step(Position.LONG)
-        assert numpy.isclose(reward, -env._comission_fee)
+        assert numpy.isclose(reward, -env.comission_fee)
         _, reward, *_ = env.step(Position.SHORT)
-        assert numpy.isclose(reward, 2 * -env._comission_fee)
+        assert numpy.isclose(reward, 2 * -env.comission_fee)
 
     def test_reward_correlates_with_price_change(self, linear_price) -> None:
         env = TradingEnv(df=linear_price)
@@ -136,22 +136,22 @@ class TestInnerLogic:
             env.step(Position.LONG)
         env.step(Position.FLAT)
 
-        expected_profit = (1 - env._comission_fee) / (1 + env._comission_fee)
+        expected_profit = (1 - env.comission_fee) / (1 + env.comission_fee)
         assert numpy.isclose(env._total_profit, expected_profit)
 
     def test_profit_for_buy_and_hold(self, linear_price) -> None:
         env = TradingEnv(df=linear_price, comission_fee=0.05)
         env.reset()
-        old_price = env.prices[env._current_tick]
+        old_price = env.price[env._idx_now]
         for _ in range(100):
             env.step(Position.LONG)
-        new_price = env.prices[env._current_tick]  # assumes that buy/sell is instant
+        new_price = env.price[env._idx_now]  # assumes that buy/sell is instant
         env.step(Position.FLAT)
 
         expected_profit = (
             (new_price / old_price)
-            * (1 - env._comission_fee)
-            / (1 + env._comission_fee)
+            * (1 - env.comission_fee)
+            / (1 + env.comission_fee)
         )
         assert numpy.isclose(env._total_profit, expected_profit)
 
@@ -161,7 +161,7 @@ class TestInnerLogic:
         """
 
         def get_features_1(env) -> numpy.ndarray:
-            return numpy.zeros(1_000), numpy.zeros((1_000, 5))
+            return pandas.Series(numpy.zeros(1_000)), numpy.zeros((1_000, 5))
 
         def get_features_2(env) -> numpy.ndarray:
             price = env.df.close

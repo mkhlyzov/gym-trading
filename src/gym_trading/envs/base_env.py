@@ -1,4 +1,5 @@
 import datetime
+from numbers import Integral
 from enum import Enum
 from typing import Any, Callable, Dict, List, Tuple
 
@@ -26,8 +27,9 @@ class BaseTradingEnv(gymnasium.Env):
     standart logic: stepping, reward / profit calculation, rendering.
     Derived environments only have to implement reset and _get_features
     methods.
-    self.reset has to build self.prices and set episod boundaries on
-    self.prices through _start_tick and _end_tick.
+
+    self.reset has to build self.price and set episod boundaries on
+    self.price through _idx_first and _idx_last.
     """
 
     metadata = {}
@@ -37,22 +39,34 @@ class BaseTradingEnv(gymnasium.Env):
     reward_range: Tuple[float, float]
 
     max_episode_steps: int
+    comission_fee: float
 
-    prices: pd.Series
-    features: np.ndarray
-    optimal_states: np.ndarray
+    df: pd.DataFrame    # Holdas all historical data available
+    price: pd.Series    # Price observations for one episode
+    _indices: np.ndarray    # price = df[_indices]
 
-    _start_tick: int
-    _end_tick: int
-    _current_tick: int
+    _idx_first: int     # Represents episode boundary
+    _idx_last: int      # Represents episode boundary
+    _idx_now: int       # _idx_now = _idx_first + [0, 1, 2, 3, ...]
+    # idx = _indices[_idx_now]
 
-    _total_profit: float
-    _total_reward: float
+    # Represent a range of valid indexes to sample starting
+    # index from on a start of a new episode
+    _idx1: int  
+    _idx2: int
+
+    # Skip episode if it contains too many (%) NaN values (df["close"])
+    # Safety mechanism in case _idx12 were defined poorly
+    NAN_PCT_TOLERANCE: float = 0.25
+
     _position: Position
     _old_position: Position
     _position_history: List[Position]
-    _last_trade_tick: int
+    _total_profit: float
+    _total_reward: float
+    _idx_last_trade: int
     _old_profit: float
+    _optimal_positions: np.ndarray
 
     _calculate_raward: Callable
 
@@ -71,7 +85,7 @@ class BaseTradingEnv(gymnasium.Env):
 
         self.max_episode_steps = max_episode_steps
         self.window_size = window_size
-        self._comission_fee = comission_fee
+        self.comission_fee = comission_fee
 
         self.reset()  # required for self._get_observation() call to work properly
 
@@ -85,10 +99,11 @@ class BaseTradingEnv(gymnasium.Env):
                     shape=self._get_observation()["features"].shape,
                     dtype=float,
                 ),
+                "position": gymnasium.spaces.Box(-1, 1, shape=(1,), dtype=float),
                 "price_change": gymnasium.spaces.Box(
                     -np.pi / 2, np.pi / 2, shape=(1,), dtype=float
                 ),
-                "position": gymnasium.spaces.Box(-1, 1, shape=(1,), dtype=float),
+                "time_passed": gymnasium.spaces.Box(0, np.inf, shape=(1,), dtype=float),
                 "time_left": gymnasium.spaces.Box(0, np.inf, shape=(1,), dtype=float),
             }
         )
@@ -132,22 +147,22 @@ class BaseTradingEnv(gymnasium.Env):
         raise NotImplementedError("Derived class has to implement this method")
 
     def _get_observation(self) -> Dict[str, Any]:
-        price_change = 0
-        if self._position != Position.FLAT:
-            # applying np.log to make symmetrical, np.arctan to make it bounded
-            price_change = np.log(
-                self.prices.iloc[self._current_tick]
-                / self.prices.iloc[self._last_trade_tick]
-            )
-            price_change = np.arctan(price_change * 100)
-        position = self._position.value - 1
+        price_change = np.log(
+            self.price.iloc[self._idx_now]
+            / self.price.iloc[self._idx_last_trade]
+        )
+        price_change = np.arctan(price_change * 100)
+        time_passed = np.log(1 + (self._idx_now - self._idx_last_trade) / 100)
+
         features = self._get_features()
-        time_left = np.log(1 + (self._end_tick - self._current_tick) / 100)
+        position = self._position.value - 1
+        time_left = np.log(1 + (self._idx_last - self._idx_now) / 100)
 
         return {
             "features": features,
-            "price_change": np.array([price_change], dtype=float),
             "position": np.array([position], dtype=float),
+            "price_change": np.array([price_change], dtype=float),
+            "time_passed": np.array([time_passed], dtype=float),
             "time_left": np.array([time_left], dtype=float),
         }
 
@@ -169,13 +184,13 @@ class BaseTradingEnv(gymnasium.Env):
             raise ValueError(f"Unsupported reward mode: {reward_mode}")
 
     def _calculate_reward_per_step(self) -> float:
-        new_price = self.prices.iloc[self._current_tick]
-        old_price = self.prices.iloc[self._current_tick - 1]
+        new_price = self.price.iloc[self._idx_now]
+        old_price = self.price.iloc[self._idx_now - 1]
         new_pos = self._position.value
         old_pos = self._old_position.value
 
         reward = np.log(new_price / old_price) * (new_pos - 1)
-        reward -= self._comission_fee * abs(new_pos - old_pos)
+        reward -= self.comission_fee * abs(new_pos - old_pos)
         return reward
 
     def _calculate_reward_per_trade(self) -> float:
@@ -189,33 +204,33 @@ class BaseTradingEnv(gymnasium.Env):
     def _calculate_raward_optimal_action(self) -> float:
         action_taken = self._position.value
 
-        self._current_tick -= 1
+        self._idx_now -= 1
         optimal_action = self.get_optimal_action().value
-        self._current_tick += 1
+        self._idx_now += 1
 
         reward = 1.0 - abs(action_taken - optimal_action)
         return reward
 
     def _update_profit_on_deal_close(self) -> None:
-        current_price = self.prices.iloc[self._current_tick]
-        last_trade_price = self.prices.iloc[self._last_trade_tick]
+        current_price = self.price.iloc[self._idx_now]
+        last_trade_price = self.price.iloc[self._idx_last_trade]
 
         if self._position == Position.LONG:
             # Closing LONG position
-            last_trade_price *= 1 + self._comission_fee
-            current_price *= 1 - self._comission_fee
+            last_trade_price *= 1 + self.comission_fee
+            current_price *= 1 - self.comission_fee
             shares = self._total_profit / last_trade_price
             self._total_profit = shares * current_price
         elif self._position == Position.SHORT:
             # Closing SHORT position
-            last_trade_price *= 1 - self._comission_fee
-            current_price *= 1 + self._comission_fee
+            last_trade_price *= 1 - self.comission_fee
+            current_price *= 1 + self.comission_fee
             shares = self._total_profit / current_price
             self._total_profit = shares * last_trade_price
 
     def step(self, action) -> Tuple[np.ndarray, float, bool, bool, dict]:
         # obs, reward, terminated, truncated, info
-        done = (self._current_tick + 1) >= self._end_tick
+        done = (self._idx_now + 1) >= self._idx_last
         next_position = Position(action) if not done else Position.FLAT
         self._position_history.append(next_position)
 
@@ -223,10 +238,10 @@ class BaseTradingEnv(gymnasium.Env):
         if self._position != next_position:
             if self._position != Position.FLAT:
                 self._update_profit_on_deal_close()
-            self._last_trade_tick = self._current_tick
+            self._idx_last_trade = self._idx_now
 
         if not done:
-            self._current_tick += 1
+            self._idx_now += 1
         self._old_position = self._position
         self._position = next_position
         reward = self._calculate_reward()
@@ -236,19 +251,32 @@ class BaseTradingEnv(gymnasium.Env):
 
     def reset(self, **kwargs) -> Tuple[Any, Dict]:
         raise NotImplementedError("Derived class has to implement this method")
+    
+    def reset(self, idx_start=None, **kwargs) -> Tuple[Any, Dict]:
+        self._idx_now = self._idx_first
+        self._idx_last_trade = self._idx_first
+        self._position = Position.FLAT
+        self._old_position = None
+        self._position_history = []
+        self._total_reward = 0.
+        self._total_profit = 1.
+        self._old_profit = None
+        self._map_optimal_actions()
+
+        return self._get_observation(), {}
 
     def close(self) -> None:
         pass
 
     @staticmethod
-    @numba.jit(nopython=True)
+    @numba.njit
     def _find_next_best_price(
         prices: np.ndarray, min_profit: float
     ) -> Tuple[int, float, int]:
         """
         prices: numpy array of prices
         min_profit: minimal trade profit (before comission).
-                    min_profit = 1.01 corresponds to 1% price change
+                    min_profit = 0.01 corresponds to 1% price change
 
         returns (next_trading_point_idx, delta_p, price_change_direction[-1, 0, 1])
         """
@@ -260,18 +288,18 @@ class BaseTradingEnv(gymnasium.Env):
             return 1, 1.0, 0
 
         p_ = prices[0]
-        delta_p = 1.0
+        delta_p = 0.
         j = 1
         idx_extremum = j
         while j < len(prices):
             p_ = s * max(s * p_, s * prices[j])
             if np.isclose(prices[j], p_):
                 idx_extremum = j
-            delta_p = (p_ / prices[0]) ** s
-            drawback = (p_ / prices[j]) ** s
+            delta_p = (p_ / prices[0]) ** s - 1
+            drawback = (p_ / prices[j]) ** s - 1
             # if drawback > min_profit or drawback > delta_p:
-            # if drawback - 1 > (delta_p - 1) / 3:
-            if drawback > delta_p or (delta_p > min_profit and drawback > min((delta_p - 1) * 0.33 + 1, min_profit)):
+            # if drawback > delta_p / 3:
+            if drawback > delta_p or (delta_p > min_profit and drawback > min(delta_p * 0.33, min_profit)):
                 break
             j += 1
 
@@ -287,33 +315,40 @@ class BaseTradingEnv(gymnasium.Env):
         Returns:
             None
         """
-        if comission_fee is None: comission_fee = self._comission_fee
-        threshold = (1 + comission_fee) / (1 - comission_fee)
-        optimal_states = np.ones(self.max_episode_steps, dtype=np.int8)
+        if comission_fee is None: comission_fee = self.comission_fee
+        min_profit = (1 + comission_fee) / (1 - comission_fee) - 1
 
-        i = i0 = self._start_tick
-        while i < self._end_tick:
+        # breaks if max_episode_steps is str, e.g. '14D'
+        # _optimal_positions = np.ones(self.max_episode_steps, dtype=np.int8)
+
+        if (
+            not hasattr(self, '_optimal_positions')
+            or len(self._optimal_positions) < len(self.price)
+        ):
+            self._optimal_positions = -np.ones(len(self.price), dtype=np.int8)
+
+        i = i0 = self._idx_first
+        while i < self._idx_last:
             idx_extremum, delta_p, s = self._find_next_best_price(
-                self.prices.to_numpy()[i : self._end_tick], threshold
+                self.price.to_numpy()[i : self._idx_last], min_profit
             )
-            if delta_p <= threshold:
+            if delta_p <= min_profit:
                 s = 0
-            optimal_states[i - i0 : i - i0 + idx_extremum] = 1 + s
+            self._optimal_positions[i - i0 : i - i0 + idx_extremum] = 1 + s
             i += idx_extremum
-        self.optimal_states = optimal_states
     
     def _get_optimal_action_static(self) -> Position:
-        optimal_state = self.optimal_states[self._current_tick - self._start_tick]
+        optimal_state = self._optimal_positions[self._idx_now - self._idx_first]
         return Position(optimal_state)
     
     def _get_optimal_action_dynamic(self, comission_fee: float = None) -> Position:
         if comission_fee is None:
-            comission_fee = self._comission_fee
-        if self._current_tick + 1 >= self._end_tick:
+            comission_fee = self.comission_fee
+        if self._idx_now + 1 >= self._idx_last:
             return Position(1)
         threshold = (1 + comission_fee) / (1 - comission_fee)
         _, delta_p, s = self._find_next_best_price(
-            self.prices.to_numpy()[self._current_tick : self._end_tick], threshold
+            self.price.to_numpy()[self._idx_now : self._idx_last], threshold
         )
         
         if delta_p <= threshold:
@@ -327,44 +362,44 @@ class BaseTradingEnv(gymnasium.Env):
         return self._get_optimal_action_static()
 
     def get_max_profit(self) -> float:
-        threshold = (1 + self._comission_fee) / (1 - self._comission_fee)
+        min_profit = (1 + self.comission_fee) / (1 - self.comission_fee) - 1
         profit = 1.0
-        i = self._start_tick
+        i = self._idx_first
 
-        while i < self._end_tick:
+        while i < self._idx_last:
             j, delta_p, _ = self._find_next_best_price(
-                self.prices.to_numpy()[i : self._end_tick], threshold
+                self.price.to_numpy()[i : self._idx_last], min_profit
             )
             i += j
 
-            if delta_p >= threshold:
-                profit *= delta_p / threshold
+            if delta_p >= min_profit:
+                profit *= (delta_p + 1) / (min_profit + 1)
 
         return profit
 
     def get_buy_and_hold(self) -> float:
         buy_and_hold = (
-            self.prices.iloc[self._end_tick - 1] / self.prices.iloc[self._start_tick]
+            self.price.iloc[self._idx_last - 1] / self.price.iloc[self._idx_first]
         )
         if buy_and_hold < 1:
             buy_and_hold = 1 / buy_and_hold
-        buy_and_hold *= (1 - self._comission_fee) / (1 + self._comission_fee)
+        buy_and_hold *= (1 - self.comission_fee) / (1 + self.comission_fee)
         return buy_and_hold
 
     def render(self) -> None:
         plt.style.use("seaborn-v0_8")
         plt.figure(figsize=(25, 10), dpi=200)
 
-        index = self.prices.index[self._start_tick : self._end_tick]
+        index = self.price.index[self._idx_first : self._idx_last]
         df = pd.DataFrame(
             dict(
-                price=self.prices[index[: len(self._position_history)]],
+                price=self.price[index[: len(self._position_history)]],
                 position=self._position_history,
             )
         )
 
-        plt.plot(self.prices[index], "b", alpha=0.3)
-        plt.plot(self.prices[index], "b.", alpha=0.3)
+        plt.plot(self.price[index], "b", alpha=0.3)
+        plt.plot(self.price[index], "b.", alpha=0.3)
         plt.plot(df.price[df.position == Position.SHORT], "ro", alpha=0.9)
         plt.plot(df.price[df.position == Position.LONG], "go", alpha=0.9)
 
@@ -372,14 +407,14 @@ class BaseTradingEnv(gymnasium.Env):
             f"total profit: {self._total_profit:.3f};    "
             + f"max possible profit: {self.get_max_profit():.3f};   "
             + f"B&H: {self.get_buy_and_hold():.3f};   "
-            + f"fee: {self._comission_fee * 100}%;   "
+            + f"fee: {self.comission_fee * 100}%;   "
         )
-        if self.prices.index.freq is not None:
-            info += f"scale: {self.prices.index.freq};"
+        if self.price.index.freq is not None:
+            info += f"scale: {self.price.index.freq};"
         info += "\n"
         if isinstance(index, pd.DatetimeIndex):
             info += f"episode duration: {index[-1] - index[0]}   "
-        info += f"idx_start: {self.prices.index[self._start_tick]};"
+        info += f"idx_start: {self.price.index[self._idx_first]};"
         plt.title(info, fontsize=20)
         plt.xlabel("datetime")
         plt.ylabel("Price")
