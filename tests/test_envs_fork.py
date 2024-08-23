@@ -104,14 +104,15 @@ class TestBaseFunctionality:
     
     def test_reward_depends_on_comission(self, instance: BaseTradingEnv) -> None:
         env = instance(df=gym_trading.datasets.BITCOIN_USD_1H)
-        env.reset()
-        env.price.loc[env.price.index] = 1
-        env.comission_fee = 0.01
-        for i in range(env._idx_last - env._idx_first - 1):
-            pos = env._position.value
-            action = numpy.random.randint(3)
-            _, r, _, _, _ = env.step(action)
-            assert (action == pos) == (r == 0)
+        for _ in range(10):
+            env.reset()
+            env.price.loc[env.price.index] = 1
+            env.comission_fee = 0.01
+            for _ in range(env._idx_last - env._idx_first - 1):
+                pos = env._position.value
+                action = env.action_space.sample()
+                _, r, _, _, _ = env.step(action)
+                assert (action == pos) == (r == 0)
 
     def test_reward_correlates_with_price_movement(self, instance: BaseTradingEnv) -> None:
         env = instance(df=gym_trading.datasets.BITCOIN_USD_1H)
@@ -120,8 +121,8 @@ class TestBaseFunctionality:
         env.reset()
         env.price.loc[env.price.index] = numpy.arange(100, 100 + len(env.price))
         env.comission_fee = 0.
-        for i in range(env._idx_last - env._idx_first - 1):
-            action = numpy.random.randint(3)
+        for _ in range(env._idx_last - env._idx_first - 1):
+            action = env.action_space.sample()
             _, r, _, _, _ = env.step(action)
             assert numpy.sign(r) == numpy.sign(action - 1)
         
@@ -129,8 +130,8 @@ class TestBaseFunctionality:
         env.reset()
         env.price.loc[env.price.index] = numpy.arange(100, 100 + len(env.price))[::-1]
         env.comission_fee = 0.
-        for i in range(env._idx_last - env._idx_first - 1):
-            action = numpy.random.randint(3)
+        for _ in range(env._idx_last - env._idx_first - 1):
+            action = env.action_space.sample()
             _, r, _, _, _ = env.step(action)
             assert numpy.sign(r) == numpy.sign(1 - action)
     
@@ -146,3 +147,31 @@ class TestBaseFunctionality:
                 _, _, term, trunc, _ = env.step(action)
                 done = (term or trunc)
             assert numpy.isclose(env._total_profit, env.get_max_profit())
+
+    def test_observation_price_change_is_tracked_properly(self, instance: BaseTradingEnv) -> None:
+        env = instance(df=gym_trading.datasets.BITCOIN_USD_1H)
+
+        env.reset()
+        indices = env.price.index[env._idx_first: env._idx_last + 1]
+        # indices = env._indices[env._idx_first: env._idx_last + 1]
+        env.price.loc[indices] = numpy.arange(100, 100 + len(indices))
+        
+        p0 = env.price.iloc[env._idx_now]
+        assert p0 == 100.
+        for _ in range(10):
+            obs, _, _, _, _ = env.step(2)
+        p1 = env.price.iloc[env._idx_now]
+        assert p1 == 110
+        assert numpy.isclose(
+            obs['price_change'],
+            numpy.arctan(100 * numpy.log(p1 / p0))
+        )
+
+        for _ in range(10):
+            obs, _, _, _, _ = env.step(1)
+        p2 = env.price.iloc[env._idx_now]
+        assert p2 == 120
+        assert numpy.isclose(
+            obs['price_change'],
+            numpy.arctan(100 * numpy.log(p2 / p1))
+        )
