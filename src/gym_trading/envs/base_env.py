@@ -281,11 +281,11 @@ class BaseTradingEnv(gymnasium.Env):
         returns (next_trading_point_idx, delta_p, price_change_direction[-1, 0, 1])
         """
         if len(prices) < 2:
-            return 1, 1.0, 0
+            return 1, 0., 0
 
         s = np.sign(prices[1] - prices[0])
         if s == 0:
-            return 1, 1.0, 0
+            return 1, 0., 0
 
         p_ = prices[0]
         delta_p = 0.
@@ -371,7 +371,6 @@ class BaseTradingEnv(gymnasium.Env):
                 self.price.to_numpy()[i : self._idx_last], min_profit
             )
             i += j
-
             if delta_p >= min_profit:
                 profit *= (delta_p + 1) / (min_profit + 1)
 
