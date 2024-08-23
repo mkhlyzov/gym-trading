@@ -18,9 +18,9 @@ Single observation type is a dictionary. One can use gymnasium.wrappers.FlattenO
 ```Python
 import gym_trading
 
-df = gym_trading.datasets.BITCOIN_USD_1H
+df = gym_trading.datasets.BITCOIN_USD_1H    # Check src/datasets/data for more info
 
-env = gym_trading.envs.TradingEnv(
+env = gym_trading.envs.TradingEnv3(
     df=df,
     max_episode_steps=400,  # Can also use time based, e.g. '24H'
     window_size=10,
